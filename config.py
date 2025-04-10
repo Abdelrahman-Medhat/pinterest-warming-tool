@@ -3,7 +3,7 @@ Configuration settings for Pinterest automation.
 """
 
 # Number of pins to process per account
-NUM_PINS_TO_PROCESS = 10
+NUM_PINS_TO_PROCESS = 3
 
 # Maximum number of parallel workers
 MAX_WORKERS = 1
