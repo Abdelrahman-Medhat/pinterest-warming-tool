@@ -15,6 +15,10 @@ from datetime import datetime
 import random
 from .pin_interaction_mixin import PinInteractionMixin
 import config
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 class AccountProcessorMixin(PinInteractionMixin):
     def __init__(self, num_pins_to_process: int = 10):
@@ -218,33 +222,76 @@ class AccountProcessorMixin(PinInteractionMixin):
 
         driver = None
         try:
-            print(f"{Fore.CYAN}🌐 Opening link in browser for pin {Fore.YELLOW}{pin['id']}{Fore.CYAN}: {Fore.WHITE}{link}{Style.RESET_ALL}")
-            
-            # Set up and launch browser
-            from selenium import webdriver
-            from selenium.webdriver.chrome.options import Options
-            from selenium.webdriver.common.by import By
-            from selenium.webdriver.support.ui import WebDriverWait
-            from selenium.webdriver.support import expected_conditions as EC
-            
-            chrome_options = Options()
-            
-            # Check if headless mode is enabled in config
+            # Check if pin link visits are enabled
+            if not config.ENABLE_PIN_LINK_VISITS:
+                print(f"{Fore.YELLOW}⚠️ Pin link visits are disabled. Skipping browser visit for pin {pin['id']}{Style.RESET_ALL}")
+                
+                # Simulate a reasonable visit duration for tracking purposes
+                simulated_duration = random.uniform(30, 60)
+                print(f"{Fore.CYAN}⏱️ Simulating {simulated_duration:.1f} seconds visit duration{Style.RESET_ALL}")
+                
+                # Wait for a short time to simulate the visit
+                time.sleep(2)
+                
+                # Track clickthrough end event
+                if api:
+                    print(f"{Fore.CYAN}📤 Sending clickthrough end event for {link}...{Style.RESET_ALL}")
+                    try:
+                        api.track_clickthrough(
+                            url=link,
+                            pin_id=pin['id'],
+                            is_start=False,
+                            duration=int(simulated_duration)
+                        )
+                    except Exception as e:
+                        print(f"{Fore.YELLOW}⚠️ Error tracking clickthrough end: {str(e)}{Style.RESET_ALL}")
+                
+                # Track experience event
+                if api:
+                    print(f"{Fore.CYAN}📤 Sending experience event for pin {pin['id']}...{Style.RESET_ALL}")
+                    try:
+                        self.track_experience(
+                            api=api,
+                            pin_id=pin['id'],
+                            did_pin_clickthrough=True,
+                            creator_username=pin.get('creator_username', '')
+                        )
+                    except Exception as e:
+                        print(f"{Fore.YELLOW}⚠️ Error tracking experience: {str(e)}{Style.RESET_ALL}")
+                
+                # Update result with simulated timing
+                result['timing']['end_time'] = datetime.now().isoformat()
+                end_time = datetime.fromisoformat(result['timing']['end_time'])
+                start_time = datetime.fromisoformat(result['timing']['start_time'])
+                result['timing']['total_time'] = (end_time - start_time).total_seconds()
+                result['timing']['stats']['scroll_time'] = simulated_duration
+                result['success'] = True
+                
+                print(f"{Fore.GREEN}✨ Successfully simulated link visit for {simulated_duration:.1f} seconds{Style.RESET_ALL}")
+                return result
+
+            # Check if headless mode is enabled
             if config.HEADLESS_BROWSER:
                 print(f"{Fore.YELLOW}👻 Running browser in headless mode{Style.RESET_ALL}")
+                chrome_options = webdriver.ChromeOptions()
                 chrome_options.add_argument("--headless")
             else:
                 print(f"{Fore.CYAN}👁️ Running browser in visible mode{Style.RESET_ALL}")
-            
-            chrome_options.add_argument("--start-maximized")  # Start maximized
-            chrome_options.add_argument("--disable-notifications")  # Disable notifications
-            chrome_options.add_argument("--disable-popup-blocking")  # Disable popup blocking
-            chrome_options.add_argument("--disable-infobars")  # Disable infobars
-            chrome_options.add_argument("--disable-extensions")  # Disable extensions
-            
-            # Add user agent to appear more human-like
-            chrome_options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-            
+                chrome_options = webdriver.ChromeOptions()
+
+            # Set up Chrome options
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("--disable-dev-shm-usage")
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-infobars")
+            chrome_options.add_argument("--disable-notifications")
+            chrome_options.add_argument("--disable-popup-blocking")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument("--start-maximized")
+            chrome_options.add_argument("--window-size=1920,1080")
+            chrome_options.add_argument("--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+
             driver = webdriver.Chrome(options=chrome_options)
             
             # Visit the link and wait for page load

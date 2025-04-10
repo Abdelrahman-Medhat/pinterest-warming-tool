@@ -24,6 +24,7 @@ The tool is designed to be configurable, allowing you to customize behavior for 
 - **Proxy support**: Configure proxies for each account to avoid IP restrictions
 - **Rate limiting protection**: Built-in delays and retry mechanisms to avoid Pinterest's rate limits
 - **Headless browser option**: Run the browser in headless mode (no GUI) for server environments
+- **Configurable link visits**: Enable or disable visiting pin links while maintaining tracking
 
 ## Project Structure
 
@@ -125,6 +126,7 @@ MAX_WORKERS = 1
 
 # Browser settings
 HEADLESS_BROWSER = False  # Set to True to run browser in headless mode (no GUI)
+ENABLE_PIN_LINK_VISITS = True  # Set to False to disable visiting pin links (tracking requests will still be sent)
 
 # Path to accounts file
 ACCOUNTS_FILE = "accounts.json"
@@ -139,6 +141,19 @@ The `HEADLESS_BROWSER` setting controls whether the browser runs in headless mod
 
 - `True`: Browser runs in headless mode, which is useful for server environments or when you don't need to see the browser window
 - `False`: Browser runs in visible mode, which is useful for debugging or when you want to see the browser interactions
+
+#### Link Visit Settings
+
+The `ENABLE_PIN_LINK_VISITS` setting controls whether the tool will actually visit pin links in a browser:
+
+- `True`: Tool will visit pin links in a browser (default)
+- `False`: Tool will skip visiting pin links but still send tracking requests to Pinterest
+
+This is useful when you want to:
+- Reduce resource usage by not opening browser windows
+- Avoid potential issues with external websites
+- Still maintain tracking data for Pinterest analytics
+- Run in environments where browser automation is not possible
 
 ## Usage
 
@@ -209,6 +224,21 @@ HEADLESS_BROWSER = True  # Run browser in headless mode (no GUI)
 
 This is useful for server environments or when you don't need to see the browser window. It can also reduce resource usage and improve performance.
 
+#### Disabling Link Visits
+
+To disable visiting pin links while still maintaining tracking data, set the `ENABLE_PIN_LINK_VISITS` option to `False` in `config.py`:
+
+```python
+# Browser settings
+ENABLE_PIN_LINK_VISITS = False  # Disable visiting pin links (tracking requests will still be sent)
+```
+
+This is useful when you want to:
+- Reduce resource usage by not opening browser windows
+- Avoid potential issues with external websites
+- Still maintain tracking data for Pinterest analytics
+- Run in environments where browser automation is not possible
+
 ## Troubleshooting
 
 ### Common Issues
@@ -226,6 +256,11 @@ This is useful for server environments or when you don't need to see the browser
    - Setting `HEADLESS_BROWSER = False` in `config.py` to run in visible mode
    - Ensuring your server has the necessary dependencies for headless Chrome
    - Adding additional Chrome options if needed (e.g., `--no-sandbox`, `--disable-dev-shm-usage`)
+
+5. **Link Visit Issues**: If you're experiencing issues with visiting pin links, try:
+   - Setting `ENABLE_PIN_LINK_VISITS = False` in `config.py` to disable link visits
+   - Checking if the external websites are accessible from your network
+   - Verifying that your browser automation setup is working correctly
 
 ### Logs
 
