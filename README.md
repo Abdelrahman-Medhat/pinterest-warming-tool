@@ -23,6 +23,7 @@ The tool is designed to be configurable, allowing you to customize behavior for 
 - **Detailed logging**: Comprehensive logging of all actions and results
 - **Proxy support**: Configure proxies for each account to avoid IP restrictions
 - **Rate limiting protection**: Built-in delays and retry mechanisms to avoid Pinterest's rate limits
+- **Headless browser option**: Run the browser in headless mode (no GUI) for server environments
 
 ## Project Structure
 
@@ -122,12 +123,22 @@ NUM_PINS_TO_PROCESS = 10
 # Maximum number of parallel workers
 MAX_WORKERS = 1
 
+# Browser settings
+HEADLESS_BROWSER = False  # Set to True to run browser in headless mode (no GUI)
+
 # Path to accounts file
 ACCOUNTS_FILE = "accounts.json"
 
 # Path to comments file
 COMMENTS_FILE = "comments.json"
 ```
+
+#### Browser Settings
+
+The `HEADLESS_BROWSER` setting controls whether the browser runs in headless mode (no GUI):
+
+- `True`: Browser runs in headless mode, which is useful for server environments or when you don't need to see the browser window
+- `False`: Browser runs in visible mode, which is useful for debugging or when you want to see the browser interactions
 
 ## Usage
 
@@ -187,6 +198,17 @@ You can customize the device information for each account to simulate different 
 }
 ```
 
+#### Headless Browser Mode
+
+To run the browser in headless mode (no GUI), set the `HEADLESS_BROWSER` option to `True` in `config.py`:
+
+```python
+# Browser settings
+HEADLESS_BROWSER = True  # Run browser in headless mode (no GUI)
+```
+
+This is useful for server environments or when you don't need to see the browser window. It can also reduce resource usage and improve performance.
+
 ## Troubleshooting
 
 ### Common Issues
@@ -199,6 +221,11 @@ You can customize the device information for each account to simulate different 
    - Using different proxies for each account
 
 3. **Session Errors**: If you're experiencing session errors, try deleting the session files in the `sessions` directory and running the script again.
+
+4. **Headless Browser Issues**: If you're experiencing issues with headless mode, try:
+   - Setting `HEADLESS_BROWSER = False` in `config.py` to run in visible mode
+   - Ensuring your server has the necessary dependencies for headless Chrome
+   - Adding additional Chrome options if needed (e.g., `--no-sandbox`, `--disable-dev-shm-usage`)
 
 ### Logs
 

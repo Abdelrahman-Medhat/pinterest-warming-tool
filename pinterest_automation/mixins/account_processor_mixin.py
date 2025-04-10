@@ -14,6 +14,7 @@ from pinterest_api.exceptions import (
 from datetime import datetime
 import random
 from .pin_interaction_mixin import PinInteractionMixin
+import config
 
 class AccountProcessorMixin(PinInteractionMixin):
     def __init__(self, num_pins_to_process: int = 10):
@@ -227,6 +228,14 @@ class AccountProcessorMixin(PinInteractionMixin):
             from selenium.webdriver.support import expected_conditions as EC
             
             chrome_options = Options()
+            
+            # Check if headless mode is enabled in config
+            if config.HEADLESS_BROWSER:
+                print(f"{Fore.YELLOW}👻 Running browser in headless mode{Style.RESET_ALL}")
+                chrome_options.add_argument("--headless")
+            else:
+                print(f"{Fore.CYAN}👁️ Running browser in visible mode{Style.RESET_ALL}")
+            
             chrome_options.add_argument("--start-maximized")  # Start maximized
             chrome_options.add_argument("--disable-notifications")  # Disable notifications
             chrome_options.add_argument("--disable-popup-blocking")  # Disable popup blocking
