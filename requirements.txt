@@ -1,0 +1,4 @@
+requests>=2.31.0
+colorama>=0.4.6
+python-json-logger>=2.0.7  # For structured JSON logging 
+requests_toolbelt
