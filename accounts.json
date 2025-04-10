@@ -6,7 +6,7 @@
       "open_pin": 100,
       "like_pin": 80,
       "save_pin": 30,
-      "comment_pin": 50,
+      "comment_pin": 10,
       "visit_link": 100
     },
     "device_info": {
@@ -14,6 +14,23 @@
       "hardware_id": "66097399e0a69560",
       "manufacturer": "Google",
       "install_id": "68e6437e05c84e57b9cf0833d28dd1c"
+    }
+  },
+  {
+    "email": "cordeiro90-00@mail.ru",
+    "password": "GcUg2j7AlXRN",
+    "behaviors": {
+      "open_pin": 100,
+      "like_pin": 10,
+      "save_pin": 50,
+      "comment_pin": 10,
+      "visit_link": 100
+    },
+    "device_info": {
+      "device": "SM-S901B",
+      "hardware_id": "3d7f4b8e2c1a5690",
+      "manufacturer": "Samsung",
+      "install_id": "f5e9c732b8a64df1b02e7d48c15af36c"
     }
   }
 ]
