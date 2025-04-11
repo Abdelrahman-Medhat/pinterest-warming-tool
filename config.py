@@ -16,4 +16,21 @@ ENABLE_PIN_LINK_VISITS = False  # Set to False to disable visiting pin links (tr
 ACCOUNTS_FILE = "accounts.json"
 
 # Path to comments file
-COMMENTS_FILE = "comments.json" 
+COMMENTS_FILE = "comments.json"
+
+# Specific pins to process and their actions
+# If not empty, the tool will process these pins instead of fetching from feeds
+# Format: List of dictionaries with pin_id and actions to perform
+# Each action (like, save, comment, visit) is either True or False
+SPECIFIC_PINS = [
+    # Example - Uncomment and edit with real pin IDs to use this feature:
+    # {
+    #     "pin_id": "425871708532790116",
+    #     "actions": {
+    #         "like": True,
+    #         "save": True,
+    #         "comment": True,
+    #         "visit": True
+    #     }
+    # }
+] 

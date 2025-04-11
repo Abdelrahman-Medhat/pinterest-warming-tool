@@ -133,6 +133,20 @@ ACCOUNTS_FILE = "accounts.json"
 
 # Path to comments file
 COMMENTS_FILE = "comments.json"
+
+# Specific pins to process
+SPECIFIC_PINS = [
+    # Example configuration:
+    # {
+    #     "pin_id": "123456789012345678",
+    #     "actions": {
+    #         "like": True,
+    #         "save": True,
+    #         "comment": True,
+    #         "visit": True
+    #     }
+    # }
+]
 ```
 
 #### Browser Settings
@@ -155,13 +169,55 @@ This is useful when you want to:
 - Still maintain tracking data for Pinterest analytics
 - Run in environments where browser automation is not possible
 
+#### Specific Pins Settings
+
+The `SPECIFIC_PINS` setting allows you to specify exact pins to process instead of fetching pins from feeds:
+
+- When this array is empty, the tool works as normal, fetching pins from Pinterest feeds
+- When pins are specified, the tool will only process those pins with the exact actions you define
+
+To use this feature:
+1. Uncomment the example in the config file or add your own entries
+2. Provide a valid pin ID for each pin (from Pinterest URL or pin data)
+3. Specify which actions to perform by setting `like`, `save`, `comment`, and `visit` to `True` or `False`
+
+This feature is useful when you:
+- Need to interact with specific pins rather than random feed content
+- Want different interactions for different pins
+- Need to target specific content for promotion or engagement
+
+Example with multiple pins and different actions:
+```python
+SPECIFIC_PINS = [
+    {
+        "pin_id": "123456789012345678",
+        "actions": {
+            "like": True,
+            "save": True,
+            "comment": True,
+            "visit": True
+        }
+    },
+    {
+        "pin_id": "987654321098765432",
+        "actions": {
+            "like": True,
+            "save": False,
+            "comment": False,
+            "visit": True
+        }
+    }
+]
+```
+
 ## Usage
 
 ### Basic Usage
 
 1. Configure your accounts in `accounts.json`
 2. Configure your comments in `comments.json` (optional)
-3. Run the script:
+3. Optionally, specify pins to process in `config.py` using the `SPECIFIC_PINS` setting
+4. Run the script:
 
 ```bash
 python main.py

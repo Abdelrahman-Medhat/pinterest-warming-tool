@@ -437,19 +437,63 @@ class AccountProcessorMixin(PinInteractionMixin):
                 'actions_results': []
             })
             
-            # Get user data if not already in result
-            if 'user_data' not in result or not result['user_data']:
-                try:
-                    user_data = api.get_user_data()
-                    if user_data:
-                        result['user_data'] = user_data
-                        print(f"{Fore.GREEN}✅ Retrieved user data for {account['email']}{Style.RESET_ALL}")
+            # Ensure user is logged in before proceeding
+            try:
+                login_result = self.login_account(api, account['email'], account['password'], account.get('proxy'))
+                if not login_result['success']:
+                    error_msg = login_result.get('error', 'Unknown login error')
+                    
+                    # Check if this is a proxy maintenance issue
+                    if self.handle_proxy_maintenance(result, error_msg):
+                        # Try login again after waiting for maintenance
+                        try:
+                            login_result = self.login_account(api, account['email'], account['password'], account.get('proxy'))
+                            if not login_result['success']:
+                                error_msg = login_result.get('error', 'Unknown login error after maintenance wait')
+                                print(f"{Fore.RED}❌ Login failed after maintenance wait: {error_msg}{Style.RESET_ALL}")
+                                result['status'] = 'failed'
+                                result['errors'].append(f"Login failed after maintenance wait: {error_msg}")
+                                return result
+                        except Exception as e2:
+                            error_msg = f"Login error after maintenance wait: {str(e2)}"
+                            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                            result['status'] = 'failed'
+                            result['errors'].append(error_msg)
+                            return result
                     else:
-                        print(f"{Fore.YELLOW}⚠️ Could not retrieve user data for {account['email']}{Style.RESET_ALL}")
-                        result['status'] = 'failed'  # Mark as failed if no user data
-                except Exception as e:
-                    print(f"{Fore.YELLOW}⚠️ Error getting user data: {str(e)}{Style.RESET_ALL}")
-                    result['status'] = 'failed'  # Mark as failed on error
+                        print(f"{Fore.RED}❌ Login failed: {error_msg}{Style.RESET_ALL}")
+                        result['status'] = 'failed'
+                        result['errors'].append(f"Login failed: {error_msg}")
+                        return result
+            except Exception as e:
+                error_msg = str(e)
+                
+                # Check if this is a proxy maintenance issue
+                if self.handle_proxy_maintenance(result, error_msg):
+                    # Try login again after waiting for maintenance
+                    try:
+                        login_result = self.login_account(api, account['email'], account['password'], account.get('proxy'))
+                        if not login_result['success']:
+                            error_msg = login_result.get('error', 'Unknown login error after maintenance wait')
+                            print(f"{Fore.RED}❌ Login failed after maintenance wait: {error_msg}{Style.RESET_ALL}")
+                            result['status'] = 'failed'
+                            result['errors'].append(f"Login failed after maintenance wait: {error_msg}")
+                            return result
+                    except Exception as e2:
+                        error_msg = f"Login error after maintenance wait: {str(e2)}"
+                        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        result['status'] = 'failed'
+                        result['errors'].append(error_msg)
+                        return result
+                else:
+                    print(f"{Fore.RED}❌ Login error: {error_msg}{Style.RESET_ALL}")
+                    result['status'] = 'failed'
+                    result['errors'].append(f"Login error: {error_msg}")
+                    return result
+            
+            # Update result with user data from login
+            result['user_data'] = login_result.get('user_data')
+            result['access_token'] = login_result.get('access_token')
             
             # Get full name from user data
             full_name = result.get('user_data', {}).get('full_name', 'Unknown User')
@@ -457,59 +501,138 @@ class AccountProcessorMixin(PinInteractionMixin):
             
             # Print account behaviors
             print(f"{Fore.CYAN}⚙️ Account behaviors for {account['email']}:{Style.RESET_ALL}")
+            
             for behavior, probability in account_behaviors.items():
                 status = f"{Fore.GREEN}{probability}%{Style.RESET_ALL}"
                 print(f"  - {behavior}: {status}")
             
-            # Get pins with links
-            pins_with_links = self.get_pins_with_links(api, result)
-            if not pins_with_links:
-                result['status'] = 'failed'
-                result['errors'].append("No pins with links found")
-                return result
-                
-            result['total_pins'] = len(pins_with_links)
+            # Check if specific pins are defined in config
+            from config import SPECIFIC_PINS
             
-            # Process each pin
-            for pin in pins_with_links:
-                # Extract pin ID from pin data
-                pin_id = pin.get('id')
-                if not pin_id:
-                    print(f"{Fore.YELLOW}⚠️ Skipping pin without ID{Style.RESET_ALL}")
-                    continue
+            if SPECIFIC_PINS:
+                print(f"{Fore.CYAN}🎯 Using specific pins from config ({len(SPECIFIC_PINS)} pins){Style.RESET_ALL}")
+                pins_to_process = []
+                
+                # Process each pin from config
+                for specific_pin_config in SPECIFIC_PINS:
+                    pin_id = specific_pin_config.get('pin_id')
+                    if not pin_id:
+                        print(f"{Fore.YELLOW}⚠️ Skipping pin config without pin_id{Style.RESET_ALL}")
+                        continue
+                    
+                    try:
+                        # Get pin data from API
+                        print(f"{Fore.CYAN}🔍 Fetching data for pin {pin_id}...{Style.RESET_ALL}")
+                        pin_data = api.get_pin_data(pin_id)
+                        
+                        if not pin_data or 'data' not in pin_data:
+                            print(f"{Fore.RED}❌ Pin {pin_id} not found or invalid response{Style.RESET_ALL}")
+                            result['errors'].append(f"Pin {pin_id} not found or invalid response")
+                            continue
+                        
+                        # Extract the pin data from response
+                        pin = pin_data['data']
+                        
+                        # Add actions from config to pin object for later use
+                        pin['config_actions'] = specific_pin_config.get('actions', {})
+                        
+                        # Check if the pin has a link (only show warning, still process the pin)
+                        if not pin.get('link'):
+                            print(f"{Fore.YELLOW}⚠️ Pin {pin_id} does not have a link{Style.RESET_ALL}")
+                        
+                        pins_to_process.append(pin)
+                    except Exception as e:
+                        error_msg = f"Error fetching pin {pin_id}: {str(e)}"
+                        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        result['errors'].append(error_msg)
+                
+                result['total_pins'] = len(pins_to_process)
+                
+                # Process each pin from config
+                for pin in pins_to_process:
+                    pin_id = pin.get('id')
+                    # Process the pin using the extracted method with config-specified actions
+                    pin_result = self._process_specific_pin(pin, result, pin_id, api)
+                    
+                    # Add pin result to actions_results
+                    result['actions_results'].append(pin_result)
+                    
+                    # Update counters based on actual actions performed
+                    result['pins_processed'] += 1
+                    
+                    # Count successful and failed actions
+                    successful_actions = sum([
+                        pin_result['open_success'],
+                        pin_result['like_success'],
+                        pin_result['save_success'],
+                        pin_result['comment_success'],
+                        pin_result.get('link_visit_success', False)
+                    ])
+                    
+                    failed_actions = sum([
+                        not pin_result['open_success'] if pin_result.get('open_attempted', False) else 0,
+                        not pin_result['like_success'] if pin_result.get('like_attempted', False) else 0,
+                        not pin_result['save_success'] if pin_result.get('save_attempted', False) else 0,
+                        not pin_result['comment_success'] if pin_result.get('comment_attempted', False) else 0,
+                        not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0
+                    ])
+                    
+                    result['successful_actions'] += successful_actions
+                    result['failed_actions'] += failed_actions
+                    result['total_actions'] += successful_actions + failed_actions
+                    
+                    # Add any errors from pin processing
+                    result['errors'].extend(pin_result['errors'])
+            else:
+                # Regular flow - Get pins with links from feed
+                pins_with_links = self.get_pins_with_links(api, result)
+                if not pins_with_links:
+                    result['status'] = 'failed'
+                    result['errors'].append("No pins with links found")
+                    return result
+                
+                result['total_pins'] = len(pins_with_links)
+                
+                # Process each pin
+                for pin in pins_with_links:
+                    # Extract pin ID from pin data
+                    pin_id = pin.get('id')
+                    if not pin_id:
+                        print(f"{Fore.YELLOW}⚠️ Skipping pin without ID{Style.RESET_ALL}")
+                        continue
                             
-                # Process the pin using the extracted method
-                pin_result = self._process_single_pin(pin, result, pin_id, api)
-                
-                # Add pin result to actions_results
-                result['actions_results'].append(pin_result)
-                
-                # Update counters based on actual actions performed
-                result['pins_processed'] += 1
-                
-                # Count successful and failed actions
-                successful_actions = sum([
-                    pin_result['open_success'],
-                    pin_result['like_success'],
-                    pin_result['save_success'],
-                    pin_result['comment_success'],
-                    pin_result.get('link_visit_success', False)
-                ])
-                
-                failed_actions = sum([
-                    not pin_result['open_success'] if pin_result.get('open_attempted', False) else 0,
-                    not pin_result['like_success'] if pin_result.get('like_attempted', False) else 0,
-                    not pin_result['save_success'] if pin_result.get('save_attempted', False) else 0,
-                    not pin_result['comment_success'] if pin_result.get('comment_attempted', False) else 0,
-                    not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0
-                ])
-                
-                result['successful_actions'] += successful_actions
-                result['failed_actions'] += failed_actions
-                result['total_actions'] += successful_actions + failed_actions
-                
-                # Add any errors from pin processing
-                result['errors'].extend(pin_result['errors'])
+                    # Process the pin using the extracted method
+                    pin_result = self._process_single_pin(pin, result, pin_id, api)
+                    
+                    # Add pin result to actions_results
+                    result['actions_results'].append(pin_result)
+                    
+                    # Update counters based on actual actions performed
+                    result['pins_processed'] += 1
+                    
+                    # Count successful and failed actions
+                    successful_actions = sum([
+                        pin_result['open_success'],
+                        pin_result['like_success'],
+                        pin_result['save_success'],
+                        pin_result['comment_success'],
+                        pin_result.get('link_visit_success', False)
+                    ])
+                    
+                    failed_actions = sum([
+                        not pin_result['open_success'] if pin_result.get('open_attempted', False) else 0,
+                        not pin_result['like_success'] if pin_result.get('like_attempted', False) else 0,
+                        not pin_result['save_success'] if pin_result.get('save_attempted', False) else 0,
+                        not pin_result['comment_success'] if pin_result.get('comment_attempted', False) else 0,
+                        not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0
+                    ])
+                    
+                    result['successful_actions'] += successful_actions
+                    result['failed_actions'] += failed_actions
+                    result['total_actions'] += successful_actions + failed_actions
+                    
+                    # Add any errors from pin processing
+                    result['errors'].extend(pin_result['errors'])
             
             # Update status based on results
             if result['pins_processed'] > 0 and result['successful_actions'] > 0:
@@ -882,28 +1005,57 @@ class AccountProcessorMixin(PinInteractionMixin):
             else:
                 print(f"{Fore.YELLOW}⏭️ Skipping comment pin action for account {account_email} (probability: {behaviors.get('comment_pin', 100)}%){Style.RESET_ALL}")
             
-            # Visit link if available (always required)
-            if pin.get('link'):
+            # Visit pin link if config specifies it and the pin has a link
+            if behaviors.get('visit', False):
                 pin_result['link_visit_attempted'] = True
-                try:
-                    add_delay()
-                    visit_result = self.visit_pin_link(pin, full_name, api)
-                    pin_result['link_visit_success'] = visit_result.get('success', False)
-                    if pin_result['link_visit_success']:
-                        print(f"{Fore.GREEN}✅ Visited link for pin {pin_id}{Style.RESET_ALL}")
-                    else:
-                        error_msg = visit_result.get('error', 'Unknown error')
-                        print(f"{Fore.RED}❌ Error visiting link for pin {pin_id}: {error_msg}{Style.RESET_ALL}")
-                        pin_result['errors'].append(f"Error visiting link for pin {pin_id}: {error_msg}")
-                except Exception as e:
-                    error_msg = f"Error visiting link for pin {pin_id}: {str(e)}"
-                    print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
-                    pin_result['errors'].append(error_msg)
-                    if "429" in str(e):
-                        print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
-                        time.sleep(random.uniform(10, 15))
+                link = pin.get('link')
+                
+                if not link:
+                    print(f"{Fore.YELLOW}⚠️ Pin {pin_id} does not have a link to visit{Style.RESET_ALL}")
+                else:
+                    try:
+                        add_delay()
+                        # Check if we should actually visit the link
+                        should_visit_link = config.ENABLE_PIN_LINK_VISITS
+                        
+                        if should_visit_link:
+                            # Visit the link (implementation depends on how you're visiting links)
+                            visit_result = self.visit_pin_link(pin, full_name, api)
+                            pin_result['link_visit_success'] = visit_result.get('success', False)
+                            
+                            if pin_result['link_visit_success']:
+                                print(f"{Fore.GREEN}✅ Visited link for pin {pin_id}: {link}{Style.RESET_ALL}")
+                            else:
+                                error_msg = visit_result.get('error', 'Unknown error')
+                                print(f"{Fore.RED}❌ Error visiting link for pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                                pin_result['errors'].append(f"Error visiting link for pin {pin_id}: {error_msg}")
+                        else:
+                            # Send tracking events but don't actually visit the link
+                            print(f"{Fore.YELLOW}⚠️ ENABLE_PIN_LINK_VISITS is disabled. Sending tracking events only.{Style.RESET_ALL}")
+                            tracking_result = self.track_experience(api, pin_id, placement_ids=[12], did_pin_clickthrough=True)
+                            pin_result['link_visit_success'] = True  # Consider tracking as success
+                            print(f"{Fore.GREEN}✅ Sent tracking events for pin {pin_id}{Style.RESET_ALL}")
+                    except Exception as e:
+                        error_msg = f"Error visiting link for pin {pin_id}: {str(e)}"
+                        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(error_msg)
+                        if "429" in str(e):
+                            print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                            time.sleep(random.uniform(10, 15))
             else:
-                print(f"{Fore.YELLOW}⚠️ No link available for pin {pin_id}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}⏭️ Skipping link visit for pin {pin_id} (not specified in config){Style.RESET_ALL}")
+            
+            # Add a final summary of actions performed
+            actions_summary = []
+            if pin_result['like_success']: actions_summary.append("Liked")
+            if pin_result['save_success']: actions_summary.append("Saved")
+            if pin_result['comment_success']: actions_summary.append("Commented")
+            if pin_result['link_visit_success']: actions_summary.append("Visited link")
+            
+            if actions_summary:
+                print(f"{Fore.GREEN}✨ Actions performed on pin {pin_id}: {', '.join(actions_summary)}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}⚠️ No successful actions performed on pin {pin_id}{Style.RESET_ALL}")
             
             return pin_result
             
@@ -913,50 +1065,228 @@ class AccountProcessorMixin(PinInteractionMixin):
             pin_result['errors'].append(error_msg)
             return pin_result
     
-    def _handle_relogin(self, api: Any, result: Dict[str, Any], error_msg: str) -> bool:
+    def _process_specific_pin(self, pin: Dict[str, Any], result: Dict[str, Any], pin_id: str, api: Any) -> Dict[str, Any]:
         """
-        Handle re-login when authentication is required.
+        Process a single pin with actions specified in config.
         
         Args:
+            pin (Dict[str, Any]): Pin data
+            result (Dict[str, Any]): Result dictionary to update
+            pin_id (str): Pin ID
             api (Any): Pinterest API instance
-            result (Dict[str, Any]): Result dictionary containing account info
-            error_msg (str): Error message that triggered re-login
             
         Returns:
-            bool: True if re-login was successful, False otherwise
+            Dict[str, Any]: Result of pin processing
         """
-        if "Authentication required" not in error_msg:
-            return False
-            
-        if not hasattr(self, '_auth_retries'):
-            self._auth_retries = 0
-            
-        max_auth_retries = 2
-        if self._auth_retries >= max_auth_retries:
-            print(f"{Fore.RED}❌ Max re-login attempts ({max_auth_retries}) reached{Style.RESET_ALL}")
-            return False
-            
-        self._auth_retries += 1
-        print(f"{Fore.YELLOW}🔄 Attempting to re-login (attempt {self._auth_retries}/{max_auth_retries})...{Style.RESET_ALL}")
+        pin_result = {
+            'pin_id': pin_id,
+            'open_success': False,
+            'like_success': False,
+            'save_success': False,
+            'comment_success': False,
+            'link_visit_success': False,
+            'open_attempted': False,
+            'like_attempted': False,
+            'save_attempted': False,
+            'comment_attempted': False,
+            'link_visit_attempted': False,
+            'errors': []
+        }
         
-        # Get credentials from result
-        if not result.get('account_email') or not hasattr(api, 'password'):
-            print(f"{Fore.RED}❌ Missing credentials for re-login{Style.RESET_ALL}")
-            return False
+        # Add delay between actions to avoid rate limiting
+        def add_delay():
+            delay = random.uniform(2, 5)
+            print(f"{Fore.YELLOW}⏳ Waiting {delay:.1f} seconds to avoid rate limiting...{Style.RESET_ALL}")
+            time.sleep(delay)
         
-        # Attempt to re-login
-        login_result = self.login_account(api, result['account_email'], api.password)
-        if login_result['success']:
-            print(f"{Fore.GREEN}✅ Re-login successful{Style.RESET_ALL}")
-            # Update result with new user data
-            result['user_data'] = login_result['user_data']
-            result['access_token'] = login_result['access_token']
-            # Reset auth retries on success
-            self._auth_retries = 0
-            return True
-        else:
-            print(f"{Fore.RED}❌ Re-login failed: {login_result.get('error', 'Unknown error')}{Style.RESET_ALL}")
+        try:
+            # Get full name from user data
+            full_name = result.get('user_data', {}).get('full_name', 'Unknown User')
+            
+            # Get account email
+            account_email = result.get('account_email', '')
+            
+            # Get config-defined actions for this pin
+            config_actions = pin.get('config_actions', {})
+            
+            # Print the pin information
+            print(f"{Fore.CYAN}📌 Processing pin: {Fore.YELLOW}{pin_id}{Style.RESET_ALL}")
+            
+            # Like the pin if config specifies it
+            if config_actions.get('like', False):
+                pin_result['like_attempted'] = True
+                try:
+                    add_delay()
+                    like_result = self.like_pin(api, pin_id, full_name)
+                    pin_result['like_success'] = like_result.get('success', False)
+                    if pin_result['like_success']:
+                        print(f"{Fore.GREEN}✅ Liked pin {pin_id}{Style.RESET_ALL}")
+                    else:
+                        error_msg = like_result.get('error', 'Unknown error')
+                        print(f"{Fore.RED}❌ Error liking pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(f"Error liking pin {pin_id}: {error_msg}")
+                except Exception as e:
+                    error_msg = f"Error liking pin {pin_id}: {str(e)}"
+                    print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                    pin_result['errors'].append(error_msg)
+                    if "429" in str(e):
+                        print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                        time.sleep(random.uniform(10, 15))
+            else:
+                print(f"{Fore.YELLOW}⏭️ Skipping like action for pin {pin_id} (not specified in config){Style.RESET_ALL}")
+            
+            # Save the pin if config specifies it
+            if config_actions.get('save', False):
+                pin_result['save_attempted'] = True
+                try:
+                    add_delay()
+                    save_result = self.save_pin(api, pin_id, pin)
+                    pin_result['save_success'] = save_result.get('success', False)
+                    if pin_result['save_success']:
+                        print(f"{Fore.GREEN}✅ Saved pin {pin_id}{Style.RESET_ALL}")
+                    else:
+                        error_msg = save_result.get('error', 'Unknown error')
+                        print(f"{Fore.RED}❌ Error saving pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(f"Error saving pin {pin_id}: {error_msg}")
+                except Exception as e:
+                    error_msg = f"Error saving pin {pin_id}: {str(e)}"
+                    print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                    pin_result['errors'].append(error_msg)
+                    if "429" in str(e):
+                        print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                        time.sleep(random.uniform(10, 15))
+            else:
+                print(f"{Fore.YELLOW}⏭️ Skipping save action for pin {pin_id} (not specified in config){Style.RESET_ALL}")
+            
+            # Comment on the pin if config specifies it
+            if config_actions.get('comment', False):
+                pin_result['comment_attempted'] = True
+                try:
+                    add_delay()
+                    # Get a random comment from the comments file
+                    if hasattr(self, 'get_random_comment'):
+                        comment = self.get_random_comment()
+                    else:
+                        comment = "Great pin! Thanks for sharing."
+                    
+                    comment_result = self.comment_on_pin(api, pin, comment, full_name)
+                    pin_result['comment_success'] = comment_result.get('success', False)
+                    if pin_result['comment_success']:
+                        print(f"{Fore.GREEN}✅ Commented on pin {pin_id}{Style.RESET_ALL}")
+                    else:
+                        error_msg = comment_result.get('error', 'Unknown error')
+                        print(f"{Fore.RED}❌ Error commenting on pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(f"Error commenting on pin {pin_id}: {error_msg}")
+                except Exception as e:
+                    error_msg = f"Error commenting on pin {pin_id}: {str(e)}"
+                    print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                    pin_result['errors'].append(error_msg)
+                    if "429" in str(e):
+                        print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                        time.sleep(random.uniform(10, 15))
+            else:
+                print(f"{Fore.YELLOW}⏭️ Skipping comment action for pin {pin_id} (not specified in config){Style.RESET_ALL}")
+            
+            # Visit pin link if config specifies it and the pin has a link
+            if config_actions.get('visit', False):
+                pin_result['link_visit_attempted'] = True
+                link = pin.get('link')
+                
+                if not link:
+                    print(f"{Fore.YELLOW}⚠️ Pin {pin_id} does not have a link to visit{Style.RESET_ALL}")
+                else:
+                    try:
+                        add_delay()
+                        # Check if we should actually visit the link
+                        should_visit_link = config.ENABLE_PIN_LINK_VISITS
+                        
+                        if should_visit_link:
+                            # Visit the link (implementation depends on how you're visiting links)
+                            visit_result = self.visit_pin_link(pin, full_name, api)
+                            pin_result['link_visit_success'] = visit_result.get('success', False)
+                            
+                            if pin_result['link_visit_success']:
+                                print(f"{Fore.GREEN}✅ Visited link for pin {pin_id}: {link}{Style.RESET_ALL}")
+                            else:
+                                error_msg = visit_result.get('error', 'Unknown error')
+                                print(f"{Fore.RED}❌ Error visiting link for pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                                pin_result['errors'].append(f"Error visiting link for pin {pin_id}: {error_msg}")
+                        else:
+                            # Send tracking events but don't actually visit the link
+                            print(f"{Fore.YELLOW}⚠️ ENABLE_PIN_LINK_VISITS is disabled. Sending tracking events only.{Style.RESET_ALL}")
+                            tracking_result = self.track_experience(api, pin_id, placement_ids=[12], did_pin_clickthrough=True)
+                            pin_result['link_visit_success'] = True  # Consider tracking as success
+                            print(f"{Fore.GREEN}✅ Sent tracking events for pin {pin_id}{Style.RESET_ALL}")
+                    except Exception as e:
+                        error_msg = f"Error visiting link for pin {pin_id}: {str(e)}"
+                        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(error_msg)
+                        if "429" in str(e):
+                            print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                            time.sleep(random.uniform(10, 15))
+            else:
+                print(f"{Fore.YELLOW}⏭️ Skipping link visit for pin {pin_id} (not specified in config){Style.RESET_ALL}")
+            
+            # Add a final summary of actions performed
+            actions_summary = []
+            if pin_result['like_success']: actions_summary.append("Liked")
+            if pin_result['save_success']: actions_summary.append("Saved")
+            if pin_result['comment_success']: actions_summary.append("Commented")
+            if pin_result['link_visit_success']: actions_summary.append("Visited link")
+            
+            if actions_summary:
+                print(f"{Fore.GREEN}✨ Actions performed on pin {pin_id}: {', '.join(actions_summary)}{Style.RESET_ALL}")
+            else:
+                print(f"{Fore.YELLOW}⚠️ No successful actions performed on pin {pin_id}{Style.RESET_ALL}")
+            
+            return pin_result
+            
+        except Exception as e:
+            error_msg = f"Error processing pin {pin_id}: {str(e)}"
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+            pin_result['errors'].append(error_msg)
+            return pin_result
+
+    def handle_proxy_maintenance(self, result: Dict[str, Any], error_message: str) -> bool:
+        """
+        Handle proxy maintenance situations.
+        
+        Args:
+            result (Dict[str, Any]): Result dictionary to update
+            error_message (str): Error message that triggered the handler
+            
+        Returns:
+            bool: True if handled successfully, False otherwise
+        """
+        maintenance_keywords = [
+            "proxy server under maintenance",
+            "try again in 5 minutes",
+            "maintenance"
+        ]
+        
+        # Check if this is a maintenance error
+        is_maintenance = any(keyword in error_message.lower() for keyword in maintenance_keywords)
+        
+        if not is_maintenance:
             return False
+            
+        print(f"{Fore.YELLOW}⚠️ Proxy maintenance detected: {error_message}{Style.RESET_ALL}")
+        
+        # Update result
+        result['status'] = 'maintenance'
+        result['errors'].append(f"Proxy maintenance: {error_message}")
+        
+        # Inform the user
+        print(f"{Fore.YELLOW}🔄 The proxy server is under maintenance. The script will pause for 5 minutes and then try again.{Style.RESET_ALL}")
+        
+        # Wait for 5 minutes (300 seconds)
+        for i in range(5):
+            minutes_left = 5 - i
+            print(f"{Fore.CYAN}⏳ Waiting for proxy maintenance to finish... {minutes_left} minute(s) remaining{Style.RESET_ALL}")
+            time.sleep(60)  # Wait for a minute
+        
+        print(f"{Fore.GREEN}✅ Resuming operations after maintenance wait period{Style.RESET_ALL}")
+        return True
 
     def get_pins_with_links(self, api: Any, result: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
@@ -1179,3 +1509,48 @@ class AccountProcessorMixin(PinInteractionMixin):
                 'status_code': 0,
                 'error': str(e)
             } 
+
+    def _handle_relogin(self, api: Any, result: Dict[str, Any], error_msg: str) -> bool:
+        """
+        Handle re-login when authentication is required.
+        
+        Args:
+            api (Any): Pinterest API instance
+            result (Dict[str, Any]): Result dictionary containing account info
+            error_msg (str): Error message that triggered re-login
+            
+        Returns:
+            bool: True if re-login was successful, False otherwise
+        """
+        if "Authentication required" not in error_msg:
+            return False
+            
+        if not hasattr(self, '_auth_retries'):
+            self._auth_retries = 0
+            
+        max_auth_retries = 2
+        if self._auth_retries >= max_auth_retries:
+            print(f"{Fore.RED}❌ Max re-login attempts ({max_auth_retries}) reached{Style.RESET_ALL}")
+            return False
+            
+        self._auth_retries += 1
+        print(f"{Fore.YELLOW}🔄 Attempting to re-login (attempt {self._auth_retries}/{max_auth_retries})...{Style.RESET_ALL}")
+        
+        # Get credentials from result
+        if not result.get('account_email') or not hasattr(api, 'password'):
+            print(f"{Fore.RED}❌ Missing credentials for re-login{Style.RESET_ALL}")
+            return False
+        
+        # Attempt to re-login
+        login_result = self.login_account(api, result['account_email'], api.password)
+        if login_result['success']:
+            print(f"{Fore.GREEN}✅ Re-login successful{Style.RESET_ALL}")
+            # Update result with new user data
+            result['user_data'] = login_result['user_data']
+            result['access_token'] = login_result['access_token']
+            # Reset auth retries on success
+            self._auth_retries = 0
+            return True
+        else:
+            print(f"{Fore.RED}❌ Re-login failed: {login_result.get('error', 'Unknown error')}{Style.RESET_ALL}")
+            return False 

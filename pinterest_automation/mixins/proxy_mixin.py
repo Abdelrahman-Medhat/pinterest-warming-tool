@@ -53,6 +53,8 @@ class ProxyMixin:
         # Rotate the IP
         rotate_url = proxy.get('rotate_url')
         max_attempts = 3
+        maintenance_retries = 2  # Number of times to retry for maintenance
+        maintenance_attempts = 0
         
         for attempt in range(1, max_attempts + 1):
             try:
@@ -61,19 +63,41 @@ class ProxyMixin:
                 
                 if rotation_response.status_code != 200:
                     print(f"{Fore.YELLOW}⚠️ Rotation failed: {rotation_response.text}{Style.RESET_ALL}")
+                    
                     # Check for specific error messages
                     try:
                         error_data = rotation_response.json()
                         if "message" in error_data:
+                            error_message = error_data["message"].lower()
+                            
                             # Check for "wait for atleast 120 seconds" message
-                            if "wait for atleast 120 seconds" in error_data["message"].lower():
-                                print(f"{Fore.YELLOW}⏳ Waiting 120 seconds before retrying rotation...{Style.RESET_ALL}")
-                                time.sleep(120)
+                            if "wait for atleast 120 seconds" in error_message:
+                                print(f"{Fore.YELLOW}⏳ Waiting 130 seconds before retrying rotation...{Style.RESET_ALL}")
+                                time.sleep(130)
                                 continue
+                            
                             # Check for "being processed" message
-                            elif "rotation is currently being processed" in error_data["message"].lower() or "automatically rotating the ip" in error_data["message"].lower():
+                            elif "rotation is currently being processed" in error_message or "automatically rotating the ip" in error_message:
                                 print(f"{Fore.YELLOW}⏳ IP rotation is in progress. Waiting 120 seconds before retrying...{Style.RESET_ALL}")
                                 time.sleep(120)
+                                continue
+                            
+                            # Check for "proxy server under maintenance" message
+                            elif "proxy server under maintenance" in error_message or "try again in 5 minutes" in error_message:
+                                maintenance_attempts += 1
+                                
+                                # If we've tried too many times, give up
+                                if maintenance_attempts > maintenance_retries:
+                                    print(f"{Fore.RED}❌ Proxy server is still under maintenance after {maintenance_attempts} attempts. Giving up.{Style.RESET_ALL}")
+                                    return False
+                                
+                                wait_minutes = 5
+                                wait_seconds = wait_minutes * 60
+                                print(f"{Fore.YELLOW}⏳ Proxy server under maintenance. Waiting {wait_minutes} minutes before retrying... (Attempt {maintenance_attempts}/{maintenance_retries}){Style.RESET_ALL}")
+                                time.sleep(wait_seconds)
+                                
+                                # Reset the current attempt so we don't count this against our regular retries
+                                attempt -= 1
                                 continue
                     except (ValueError, KeyError):
                         pass
@@ -116,7 +140,16 @@ class ProxyMixin:
                 return True
                 
             except Exception as e:
-                print(f"{Fore.YELLOW}⚠️ Error during rotation attempt {attempt}: {e}{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}⚠️ Error during rotation attempt {attempt}: {str(e)}{Style.RESET_ALL}")
+                
+                # Check if this is a timeout exception, which might indicate maintenance
+                if "timeout" in str(e).lower():
+                    print(f"{Fore.YELLOW}⏳ Request timed out, possibly due to proxy maintenance. Waiting 2 minutes before retrying...{Style.RESET_ALL}")
+                    time.sleep(120)
+                    # Don't count this as a regular attempt
+                    attempt -= 1
+                    continue
+                
                 if attempt < max_attempts:
                     time.sleep(5)
                 else:
@@ -144,19 +177,29 @@ class ProxyMixin:
             username, password = auth.split(':')
             ip, port = address.split(':')
             
+            # Get the rotate URL from account if available, otherwise use the default
+            rotate_url = account.get('rotate_url', 'https://api.mountproxies.com/api/proxy/67f3afc999e9e63742ed5658/rotate_ip?api_key=a4f667e14ef53ce1f5bb0a39a42a2d3a&_gl=1*hsie7f*_gcl_au*MjE0NzQwMTg3Ni4xNzQyNzI5OTgz')
+            
             proxy = {
                 'username': username,
                 'password': password,
                 'ip': ip,
                 'port': port,
-                'rotate_url': 'https://api.mountproxies.com/api/proxy/67f3afc999e9e63742ed5658/rotate_ip?api_key=a4f667e14ef53ce1f5bb0a39a42a2d3a&_gl=1*hsie7f*_gcl_au*MjE0NzQwMTg3Ni4xNzQyNzI5OTgz'
+                'rotate_url': rotate_url
             }
             
             # Rotate the IP
-            return self.rotate_ip(proxy)
+            rotation_result = self.rotate_ip(proxy)
+            
+            if not rotation_result:
+                # If rotation failed, notify the user and suggest what to do
+                print(f"{Fore.RED}⚠️ Proxy rotation failed for account {account['email']}. The script will continue but may fail if IP is blocked.{Style.RESET_ALL}")
+                print(f"{Fore.YELLOW}💡 Suggestion: You can manually restart the script in a few minutes when proxy is available again.{Style.RESET_ALL}")
+            
+            return rotation_result
             
         except Exception as e:
-            print(f"{Fore.RED}❌ Error rotating proxy for account {account['email']}: {e}{Style.RESET_ALL}")
+            print(f"{Fore.RED}❌ Error rotating proxy for account {account['email']}: {str(e)}{Style.RESET_ALL}")
             return False
     
     def get_current_time(self) -> float:
