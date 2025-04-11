@@ -566,7 +566,8 @@ class AccountProcessorMixin(PinInteractionMixin):
                         pin_result['like_success'],
                         pin_result['save_success'],
                         pin_result['comment_success'],
-                        pin_result.get('link_visit_success', False)
+                        pin_result.get('link_visit_success', False),
+                        pin_result.get('follow_creator_success', False)
                     ])
                     
                     failed_actions = sum([
@@ -574,7 +575,8 @@ class AccountProcessorMixin(PinInteractionMixin):
                         not pin_result['like_success'] if pin_result.get('like_attempted', False) else 0,
                         not pin_result['save_success'] if pin_result.get('save_attempted', False) else 0,
                         not pin_result['comment_success'] if pin_result.get('comment_attempted', False) else 0,
-                        not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0
+                        not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0,
+                        not pin_result.get('follow_creator_success', True) if pin_result.get('follow_creator_attempted', False) else 0
                     ])
                     
                     result['successful_actions'] += successful_actions
@@ -616,7 +618,8 @@ class AccountProcessorMixin(PinInteractionMixin):
                         pin_result['like_success'],
                         pin_result['save_success'],
                         pin_result['comment_success'],
-                        pin_result.get('link_visit_success', False)
+                        pin_result.get('link_visit_success', False),
+                        pin_result.get('follow_creator_success', False)
                     ])
                     
                     failed_actions = sum([
@@ -624,7 +627,8 @@ class AccountProcessorMixin(PinInteractionMixin):
                         not pin_result['like_success'] if pin_result.get('like_attempted', False) else 0,
                         not pin_result['save_success'] if pin_result.get('save_attempted', False) else 0,
                         not pin_result['comment_success'] if pin_result.get('comment_attempted', False) else 0,
-                        not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0
+                        not pin_result.get('link_visit_success', True) if pin.get('link') and pin_result.get('link_visit_attempted', False) else 0,
+                        not pin_result.get('follow_creator_success', True) if pin_result.get('follow_creator_attempted', False) else 0
                     ])
                     
                     result['successful_actions'] += successful_actions

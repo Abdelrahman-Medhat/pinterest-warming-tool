@@ -69,7 +69,8 @@ This file contains the account credentials and behavior settings for each accoun
       "like_pin": 80,
       "save_pin": 30,
       "comment_pin": 50,
-      "visit_link": 100
+      "visit_link": 100,
+      "follow_creator": 100
     },
     "device_info": {
       "device": "sdk_gphone64_arm64",
