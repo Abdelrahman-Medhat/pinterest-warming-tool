@@ -5,7 +5,8 @@ from pinterest_api.exceptions import (
     InvalidResponseError,
     PinterestAuthError,
     IncorrectPasswordError,
-    AuthenticationError
+    AuthenticationError,
+    PasswordResetedError
 )
 import requests
 import json
@@ -138,11 +139,54 @@ class PinterestAutomation:
                         })
         
         # Print summary
-        success_count = sum(1 for r in results if r['status'] == 'active')
+        successful = 0
+        password_reset = 0
+        other_failed = 0
+        
+        # Count different result types
+        for r in results:
+            # First check for password reset errors
+            if r.get('error_type') == 'password_reset' or any('password has been reset' in str(error).lower() for error in r.get('errors', [])):
+                password_reset += 1
+            # Then check for active status
+            elif r.get('status') == 'active':
+                successful += 1
+            # Otherwise count as general failure
+            else:
+                other_failed += 1
+        
         print(f"\n{Fore.CYAN}📊 Summary:{Style.RESET_ALL}")
         print(f"{Fore.CYAN}Total accounts: {Fore.YELLOW}{len(self.accounts)}{Style.RESET_ALL}")
-        print(f"{Fore.GREEN}Successful: {Fore.YELLOW}{success_count}{Style.RESET_ALL}")
-        print(f"{Fore.RED}Failed: {Fore.YELLOW}{len(self.accounts) - success_count}{Style.RESET_ALL}")
+        print(f"{Fore.GREEN}Successful: {Fore.YELLOW}{successful}{Style.RESET_ALL}")
+        if password_reset > 0:
+            print(f"{Fore.RED}Password Reset: {Fore.YELLOW}{password_reset}{Style.RESET_ALL}")
+        if other_failed > 0:
+            print(f"{Fore.RED}Other Errors: {Fore.YELLOW}{other_failed}{Style.RESET_ALL}")
+        
+        # Print details of failed accounts
+        failed_total = password_reset + other_failed
+        if failed_total > 0:
+            print(f"\n{Fore.RED}Failed accounts details:{Style.RESET_ALL}")
+            for result in results:
+                if result['status'] != 'active':
+                    email = result.get('email', 'Unknown')
+                    error = result.get('error', 'Unknown error')
+                    
+                    # Check if it's a password reset error
+                    if result.get('error_type') == 'password_reset' or 'password has been reset' in str(error).lower():
+                        print(f"  {Fore.RED}❌ {email}: {Fore.YELLOW}Password has been reset{Style.RESET_ALL}")
+                    else:
+                        print(f"  {Fore.RED}❌ {email}: {error}{Style.RESET_ALL}")
+        
+        print(f"\n{Fore.CYAN}📊 Final Summary:{Style.RESET_ALL}")
+        print(f"Total accounts: {len(results)}")
+        print(f"Successful: {Fore.GREEN}{successful}{Style.RESET_ALL}")
+        print(f"Failed: {Fore.RED}{failed_total}{Style.RESET_ALL}")
+        if password_reset > 0:
+            print(f"  - Password Reset: {Fore.RED}{password_reset}{Style.RESET_ALL}")
+        if other_failed > 0:
+            print(f"  - Other Errors: {Fore.RED}{other_failed}{Style.RESET_ALL}")
+        print(f"Total time: {sum(r.get('processing_time', 0) for r in results):.2f} seconds")
         
         return results
     
@@ -227,19 +271,30 @@ class PinterestAutomationWithMixins(PinterestAutomation, TrackingMixin, AccountP
             )
             
             # Process account using AccountProcessorMixin
-            account_result = self.account_processor.process_account(
-                account=account,
-                api=api,
-                result={},
-                retry_params=retry_params
-            )
-            
-            # Update result with account processing details
-            result.update(account_result)
-            
-            # Set status to active if no errors occurred
-            if not result.get('error'):
-                result['status'] = 'active'
+            try:
+                account_result = self.account_processor.process_account(
+                    account=account,
+                    api=api,
+                    result={},
+                    retry_params=retry_params
+                )
+                
+                # Update result with account processing details
+                result.update(account_result)
+                
+                # Set status to active ONLY if no errors occurred AND this is not a password reset case
+                if not result.get('error') and not any('password has been reset' in str(error).lower() for error in result.get('errors', [])) and result.get('error_type') != 'password_reset':
+                    result['status'] = 'active'
+                else:
+                    result['status'] = 'failed'
+            except PasswordResetedError as e:
+                error_msg = str(e)
+                print(f"{Fore.RED}❌ Password Reset Error: {error_msg}{Style.RESET_ALL}")
+                result['status'] = 'failed'
+                result['error'] = error_msg
+                # Add specific error type information
+                result['error_type'] = 'password_reset'
+                result['errors'] = result.get('errors', []) + [error_msg]
             
             # Track events using TrackingMixin
             self.tracking.track_account_processed(
@@ -248,24 +303,32 @@ class PinterestAutomationWithMixins(PinterestAutomation, TrackingMixin, AccountP
                 processing_time=time.time() - start_time
             )
             
+            # Record processing time
+            result['processing_time'] = time.time() - start_time
+            
+            # Final status check for password reset - ALWAYS override to failed
+            if any('password has been reset' in str(error).lower() for error in result.get('errors', [])) or result.get('error_type') == 'password_reset':
+                result['status'] = 'failed'
+                
             return result
             
-        except Exception as e:
+        except PasswordResetedError as e:
+            # Handle password reset error at the top level
             error_msg = str(e)
-            print(f"{Fore.RED}❌ Error processing account {account['email']}: {error_msg}{Style.RESET_ALL}")
-            
-            result.update({
-                'status': 'failed',
-                'error': error_msg,
-                'processing_time': time.time() - start_time
-            })
-            
-            # Track error using TrackingMixin
-            if hasattr(self.tracking, 'track_error'):
-                self.tracking.track_error(
-                    account=account,
-                    error=error_msg,
-                    error_type=type(e).__name__
-                )
-            
-            return result 
+            print(f"{Fore.RED}❌ Password Reset Error: {error_msg}{Style.RESET_ALL}")
+            result['status'] = 'failed'
+            result['error'] = error_msg
+            # Add specific error type information
+            result['error_type'] = 'password_reset'
+            result['errors'] = [error_msg]
+        except Exception as e:
+            # Handle other exceptions
+            error_msg = f"Error processing account: {str(e)}"
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+            result['status'] = 'failed'
+            result['error'] = error_msg
+        
+        # Record processing time even for errors
+        result['processing_time'] = time.time() - start_time
+        
+        return result 

@@ -4,7 +4,8 @@ from .auth import (
     LoginFailedError,
     InvalidResponseError,
     IncorrectPasswordError,
-    AuthenticationError
+    AuthenticationError,
+    PasswordResetedError
 )
 
 class PinterestError(Exception):
@@ -35,11 +36,16 @@ class IncorrectPasswordError(PinterestError):
     """Raised when password is incorrect."""
     pass
 
+class PasswordResetedError(PinterestError):
+    """Raised when Pinterest has reset the account's password for security reasons."""
+    pass
+
 __all__ = [
     'PinterestAuthError',
     'EmailNotFoundError',
     'LoginFailedError',
     'InvalidResponseError',
     'IncorrectPasswordError',
-    'AuthenticationError'
+    'AuthenticationError',
+    'PasswordResetedError'
 ] 

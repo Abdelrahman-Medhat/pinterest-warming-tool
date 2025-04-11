@@ -1,0 +1,3 @@
+2025-04-10 14:55:56 [INFO] Initializing Pinterest API client | Context: {"email":"ursula.belford.73@mail.ru"}
+2025-04-10 14:55:56 [DEBUG] Creating new requests session
+2025-04-10 14:56:18 [DEBUG] Sent custom event tracking request | Context: {"extra":{"context":{"event_name":"PinView","url":"https://trk.pinterest.com/log/?client_id=1431602&timestamp=1744268177&oauth_signature=28473e1241fd1cf63db71d276a8b6ff6933011c52c6abea95efe469fc895b67f","status_code":201,"headers":{"content-type":"application/json","content-encoding":"gzip","content-length":"65","x-envoy-upstream-service-time":"0","date":"Thu, 10 Apr 2025 06:56:18 GMT","server":"envoy","x-pinterest-rid":"1779142910725169","x-pinterest-rid-128bit":"b30d18cfa7844ff4f6e7da8290484ad6"}}}}

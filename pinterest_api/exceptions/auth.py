@@ -32,4 +32,10 @@ class InvalidResponseError(PinterestAuthError):
     def __init__(self, response: dict):
         self.response = response
         self.message = f"Invalid API response format: {response}"
+        super().__init__(self.message)
+
+class PasswordResetedError(PinterestAuthError):
+    """Raised when Pinterest has reset the account's password for security reasons."""
+    def __init__(self, message: str = None):
+        self.message = message or "Your password has been reset by Pinterest for security reasons. Please reset your password to regain access to your account."
         super().__init__(self.message) 

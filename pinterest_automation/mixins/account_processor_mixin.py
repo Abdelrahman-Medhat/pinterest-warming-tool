@@ -9,7 +9,8 @@ from pinterest_api.exceptions import (
     InvalidResponseError,
     PinterestAuthError,
     IncorrectPasswordError,
-    AuthenticationError
+    AuthenticationError,
+    PasswordResetedError
 )
 from datetime import datetime
 import random
@@ -27,7 +28,7 @@ class AccountProcessorMixin(PinInteractionMixin):
     Mixin for account-related operations.
     """
     
-    def login_account(self, api: Any, email: str, password: str, proxy: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    def login_account(self, api: Any, email: str, password: str, proxy: Optional[str] = None) -> Dict[str, Any]:
         """
         Login to a Pinterest account.
         
@@ -35,145 +36,112 @@ class AccountProcessorMixin(PinInteractionMixin):
             api (Any): Pinterest API instance
             email (str): Account email
             password (str): Account password
-            proxy (Optional[Dict[str, str]]): Proxy configuration
+            proxy (Optional[str]): Proxy to use
             
         Returns:
-            Dict[str, Any]: Login result containing user data and access token
+            Dict[str, Any]: Login result
         """
-        result = {
-            'success': False,
-            'error': None,
-            'user_data': None,
-            'access_token': None
-        }
-        
         try:
-            print(f"{Fore.CYAN}🔑 Logging in to account: {email}{Style.RESET_ALL}")
+            # Create session directory if it doesn't exist
+            session_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'sessions')
+            os.makedirs(session_dir, exist_ok=True)
             
-            # Check if session exists
-            session_file = f"sessions/{email.replace('@', '_at_').replace('.', '_')}.json"
-            if os.path.exists(session_file):
-                print(f"{Fore.YELLOW}📂 Found existing session for {email}{Style.RESET_ALL}")
+            # Generate session file path
+            session_file = os.path.join(session_dir, f"{email.replace('@', '_at_').replace('.', '_')}.json")
+            
+            # Try to load existing session
+            session_data = self.load_session_from_file(session_file)
+            
+            if session_data:
+                print(f"{Fore.GREEN}✅ Found existing session for {email}{Style.RESET_ALL}")
+                
+                # Restore session data
+                api.session.headers.update(session_data['headers'])
+                for cookie_name, cookie_value in session_data['cookies'].items():
+                    api.session.cookies.set(cookie_name, cookie_value)
+                
+                # Set access token
+                if session_data['access_token']:
+                    api.session.headers['x-csrftoken'] = session_data['access_token']
+                    # Set Authorization bearer token
+                    api.session.headers['Authorization'] = f"Bearer {session_data['access_token']}"
+                
+                # Set user data
+                if session_data['user_data']:
+                    api.user_data = session_data['user_data']
+                
+                # Set email
+                if session_data['email']:
+                    api.email = session_data['email']
+                
+                # Set device info
+                if session_data.get('device_info'):
+                    api.account = {'device_info': session_data['device_info']}
+                
+                # Validate session
                 try:
-                    # Try to load and validate session
-                    session_data = self.load_session_from_file(session_file)
-                    if session_data:
-                        # Apply session data to API instance
-                        api.session.headers.update(session_data.get('headers', {}))
-                        for cookie_name, cookie_value in session_data.get('cookies', {}).items():
-                            api.session.cookies.set(cookie_name, cookie_value)
-                        
-                        # Verify session is still valid
-                        try:
-                            user_data = api.get_user_data()
-                            if user_data:
-                                result['user_data'] = user_data
-                                # Get access token from cookies or headers
-                                access_token = None
-                                for cookie in api.session.cookies:
-                                    if cookie.name == 'csrftoken':
-                                        access_token = cookie.value
-                                        break
-                                if not access_token:
-                                    access_token = api.session.headers.get('x-csrftoken')
-                                result['access_token'] = access_token
-                                result['success'] = True
-                                print(f"{Fore.GREEN}✅ Successfully loaded session for {email}{Style.RESET_ALL}")
-                                return result
-                        except:
-                            print(f"{Fore.YELLOW}⚠️ Session invalid, will login with credentials{Style.RESET_ALL}")
+                    api.get_user_data()
+                    print(f"{Fore.GREEN}✅ Session validated successfully{Style.RESET_ALL}")
+                    return {'success': True, 'message': 'Logged in using existing session'}
                 except Exception as e:
-                    print(f"{Fore.YELLOW}⚠️ Error loading session: {str(e)}{Style.RESET_ALL}")
+                    print(f"{Fore.YELLOW}⚠️ Session validation failed: {str(e)}{Style.RESET_ALL}")
             
-            # Login with credentials
-            print(f"{Fore.CYAN}🔑 Logging in with credentials for {email}{Style.RESET_ALL}")
+            # If no valid session, proceed with login
+            print(f"{Fore.YELLOW}⚠️ No valid session found, logging in...{Style.RESET_ALL}")
             
-            # Set credentials
+            # Set proxy if provided
+            if proxy:
+                api.session.proxies = {
+                    'http': proxy,
+                    'https': proxy
+                }
+            
+            # Clear existing session data
+            api.session.cookies.clear()
+            api.session.headers.clear()
+            
+            # Set credentials on API instance
             api.email = email
             api.password = password
             
-            # Set device info if available
-            if hasattr(api, 'account') and 'device_info' in api.account:
-                print(f"{Fore.CYAN}📱 Setting device info for {email}{Style.RESET_ALL}")
-                api.set_device_info(api.account['device_info'])
-            
-            # Check email exists
-            print(f"{Fore.CYAN}📧 Checking if email exists...{Style.RESET_ALL}")
-            api.check_email_exists()
-            
-            # Perform login
-            print(f"{Fore.CYAN}🔐 Performing login...{Style.RESET_ALL}")
-            login_response = api.login()
-            
-            # Handle both boolean and dictionary responses
-            if isinstance(login_response, bool) and login_response:
-                # If login() returned True, try to get user data
-                try:
-                    user_data = api.get_user_data()
-                    if user_data:
-                        result['user_data'] = user_data
-                        # Get access token from cookies or headers
-                        access_token = None
-                        for cookie in api.session.cookies:
-                            if cookie.name == 'csrftoken':
-                                access_token = cookie.value
-                                break
-                        if not access_token:
-                            access_token = api.session.headers.get('x-csrftoken')
-                        result['access_token'] = access_token
-                        result['success'] = True
-                        
-                        # Save new session
-                        self.save_session_to_file(api, session_file)
+            # Perform login using the proper login method
+            try:
+                login_result = api.login()
                 
-                        print(f"{Fore.GREEN}✅ Successfully logged in to account: {email}{Style.RESET_ALL}")
-                    else:
-                        result['error'] = "Failed to get user data after login"
-                        print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-                except Exception as e:
-                    result['error'] = f"Error getting user data: {str(e)}"
-                    print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-            elif isinstance(login_response, dict) and login_response.get('success'):
-                # Handle dictionary response
-                user_data = api.get_user_data()
-                result['user_data'] = user_data
-                # Get access token from cookies or headers
-                access_token = None
-                for cookie in api.session.cookies:
-                    if cookie.name == 'csrftoken':
-                        access_token = cookie.value
-                        break
-                if not access_token:
-                    access_token = api.session.headers.get('x-csrftoken')
-                result['access_token'] = access_token
-                result['success'] = True
+                if login_result:
+                    # Get access token from cookies or headers
+                    access_token = None
+                    for cookie in api.session.cookies:
+                        if cookie.name == 'csrftoken':
+                            access_token = cookie.value
+                            break
+                    if not access_token:
+                        access_token = api.session.headers.get('x-csrftoken')
+                    
+                    # Set Authorization bearer token
+                    if access_token:
+                        api.session.headers['Authorization'] = f"Bearer {access_token}"
+                    
+                    # Save new session
+                    self.save_session_to_file(api, session_file)
+                    return {'success': True, 'message': 'Logged in successfully'}
+                else:
+                    return {'success': False, 'message': 'Login failed'}
+                    
+            except Exception as e:
+                error_msg = str(e)
+                if isinstance(e, IncorrectPasswordError):
+                    return {'success': False, 'message': 'Incorrect password'}
+                elif isinstance(e, EmailNotFoundError):
+                    return {'success': False, 'message': 'Email not found'}
+                elif isinstance(e, PasswordResetedError):
+                    print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                    return {'success': False, 'message': error_msg, 'code': 88}
+                else:
+                    return {'success': False, 'message': f'Login error: {error_msg}'}
                 
-                # Save new session
-                self.save_session_to_file(api, session_file)
-                
-                print(f"{Fore.GREEN}✅ Successfully logged in to account: {email}{Style.RESET_ALL}")
-            else:
-                # Handle failure case
-                error_msg = "Unknown login error"
-                if isinstance(login_response, dict):
-                    error_msg = login_response.get('error', error_msg)
-                result['error'] = error_msg
-                print(f"{Fore.RED}❌ Failed to login to account: {email} - {result['error']}{Style.RESET_ALL}")
-            
-        except EmailNotFoundError as e:
-            result['error'] = f"Email not found: {str(e)}"
-            print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-        except IncorrectPasswordError:
-            result['error'] = "Incorrect password"
-            print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-        except LoginFailedError as e:
-            result['error'] = f"Login failed: {str(e)}"
-            print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
         except Exception as e:
-            result['error'] = str(e)
-            print(f"{Fore.RED}❌ Error logging in to account: {email} - {str(e)}{Style.RESET_ALL}")
-        
-        return result
+            return {'success': False, 'message': f'Login error: {str(e)}'}
     
     def visit_pin_link(self, pin: Dict[str, Any], full_name: str, api: Any) -> Dict[str, Any]:
         """
@@ -477,6 +445,25 @@ class AccountProcessorMixin(PinInteractionMixin):
                 'actions_results': []
             })
             
+            # Log in to the account
+            login_result = self.login_account(api, account['email'], account['password'], account.get('proxy'))
+            if not login_result['success']:
+                error_msg = login_result.get('message', 'Login failed')
+                print(f"{Fore.RED}❌ Login failed for {account['email']}: {error_msg}{Style.RESET_ALL}")
+                
+                # Check for password reset error
+                if login_result.get('code') == 88 or 'password has been reset' in error_msg.lower():
+                    result['status'] = 'failed'
+                    result['errors'].append(error_msg)
+                    result['error_type'] = 'password_reset'
+                    print(f"{Fore.RED}❌ Password has been reset for account {account['email']}{Style.RESET_ALL}")
+                    return result
+                
+                # Other login failures
+                result['status'] = 'failed'
+                result['errors'].append(error_msg)
+                return result
+            
             # Get user data if not already in result
             if 'user_data' not in result or not result['user_data']:
                 try:
@@ -488,7 +475,17 @@ class AccountProcessorMixin(PinInteractionMixin):
                         print(f"{Fore.YELLOW}⚠️ Could not retrieve user data for {account['email']}{Style.RESET_ALL}")
                         result['status'] = 'failed'  # Mark as failed if no user data
                 except Exception as e:
-                    print(f"{Fore.YELLOW}⚠️ Error getting user data: {str(e)}{Style.RESET_ALL}")
+                    error_msg = str(e)
+                    print(f"{Fore.YELLOW}⚠️ Error getting user data: {error_msg}{Style.RESET_ALL}")
+                    
+                    # Check for password reset error
+                    if 'password has been reset' in error_msg.lower() or 'error code 88' in error_msg.lower():
+                        print(f"{Fore.RED}❌ Password has been reset for account {account['email']}{Style.RESET_ALL}")
+                        result['status'] = 'failed'
+                        result['errors'].append(f"Password has been reset for account {account['email']}")
+                        result['error_type'] = 'password_reset'
+                        return result
+                    
                     result['status'] = 'failed'  # Mark as failed on error
             
             # Get full name from user data
@@ -504,6 +501,12 @@ class AccountProcessorMixin(PinInteractionMixin):
             # Get pins with links
             pins_with_links = self.get_pins_with_links(api, result)
             if not pins_with_links:
+                # Check if the error was due to password reset
+                if any('password has been reset' in str(error).lower() for error in result.get('errors', [])):
+                    print(f"{Fore.RED}❌ Password has been reset for account {account['email']}{Style.RESET_ALL}")
+                    result['status'] = 'failed'
+                    return result
+                    
                 result['status'] = 'failed'
                 result['errors'].append("No pins with links found")
                 return result
@@ -550,6 +553,13 @@ class AccountProcessorMixin(PinInteractionMixin):
                 
                 # Add any errors from pin processing
                 result['errors'].extend(pin_result['errors'])
+                
+                # Check for password reset error in pin processing
+                if any('password has been reset' in str(error).lower() for error in pin_result['errors']):
+                    print(f"{Fore.RED}❌ Password has been reset for account {account['email']}{Style.RESET_ALL}")
+                    result['status'] = 'failed'
+                    result['error_type'] = 'password_reset'
+                    return result
             
             # Update status based on results
             if result['pins_processed'] > 0 and result['successful_actions'] > 0:
@@ -567,19 +577,35 @@ class AccountProcessorMixin(PinInteractionMixin):
             
             # Print final status
             print(f"{Fore.CYAN}📊 Account processing result for {account['email']}:{Style.RESET_ALL}")
+            
+            # Ensure status is properly set for display
+            if any('password has been reset' in str(error).lower() for error in result.get('errors', [])) or result.get('error_type') == 'password_reset':
+                result['status'] = 'failed'
+                
             print(f"  Status: {Fore.GREEN if result['status'] == 'success' else Fore.RED}{result['status']}{Style.RESET_ALL}")
             print(f"  Pins processed: {result['pins_processed']}/{result['total_pins']}")
             print(f"  Success rate: {result['success_rate']:.1f}%")
             
             # Ensure status is properly set for the final summary
-            if result['pins_processed'] > 0 and result['successful_actions'] > 0:
+            if result['pins_processed'] > 0 and result['successful_actions'] > 0 and not any('password has been reset' in str(error).lower() for error in result.get('errors', [])) and result.get('error_type') != 'password_reset':
                 result['status'] = 'success'
+            else:
+                result['status'] = 'failed'
             
             return result
             
         except Exception as e:
             error_msg = f"Error processing account: {str(e)}"
             print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+            
+            # Check for password reset error
+            if 'password has been reset' in error_msg.lower() or 'error code 88' in error_msg.lower():
+                print(f"{Fore.RED}❌ Password has been reset for account {account['email']}{Style.RESET_ALL}")
+                result['status'] = 'failed'
+                result['errors'].append(f"Password has been reset for account {account['email']}")
+                result['error_type'] = 'password_reset'
+                return result
+                
             result['status'] = 'failed'
             result['errors'].append(error_msg)
             return result
@@ -631,12 +657,21 @@ class AccountProcessorMixin(PinInteractionMixin):
             print(f"  Account {i+1} raw status: {r.get('status')}")
             print(f"  Account {i+1} pins_processed: {r.get('pins_processed', 0)}")
             print(f"  Account {i+1} successful_actions: {r.get('successful_actions', 0)}")
+            print(f"  Account {i+1} errors: {r.get('errors', [])}")
         
         # Manually calculate success/failure based on actual results
         successful = 0
         failed = 0
-        
+        password_reset = 0
         for i, r in enumerate(results):
+            # Check for password reset error
+            if any('password has been reset' in str(error).lower() for error in r.get('errors', [])) or r.get('error_type') == 'password_reset':
+                failed += 1
+                r['status'] = 'failed'
+                r['error_type'] = r.get('error_type') or 'password_reset'
+                print(f"  {Fore.RED}❌ FAILED (Password Reset): {r.get('account_email', 'unknown')}{Style.RESET_ALL}")
+                continue
+                
             pins_processed = r.get('pins_processed', 0)
             successful_actions = r.get('successful_actions', 0)
             
@@ -664,9 +699,18 @@ class AccountProcessorMixin(PinInteractionMixin):
         # Recount again to ensure there are no discrepancies 
         successful = 0 
         failed = 0
+        password_reset = 0
         for r in results:
             # Additional debug output
             print(f"{Fore.YELLOW}⚙️ DEBUG STATUS: {r.get('account_email')}: raw_status={repr(r.get('status'))}, pins={r.get('pins_processed', 0)}, actions={r.get('successful_actions', 0)}{Style.RESET_ALL}")
+            
+            # Check for password reset error first
+            if any('password has been reset' in str(error).lower() for error in r.get('errors', [])) or r.get('error_type') == 'password_reset':
+                failed += 1
+                password_reset += 1
+                r['error_type'] = r.get('error_type') or 'password_reset'
+                print(f"{Fore.RED}❌ COUNTED AS FAILURE (Password Reset): {r.get('account_email')}{Style.RESET_ALL}")
+                continue
             
             # EXPLICITLY CHECK THE ACTUAL NUMBERS - ignore the status field completely
             if r.get('pins_processed', 0) > 0 and r.get('successful_actions', 0) > 0:
@@ -680,19 +724,14 @@ class AccountProcessorMixin(PinInteractionMixin):
         if len(results) == 1 and results[0].get('pins_processed', 0) > 0 and results[0].get('successful_actions', 0) > 0 and successful == 0:
             print(f"{Fore.YELLOW}⚠️ Forcing successful count from 0 to 1 since we have successful actions{Style.RESET_ALL}")
             successful = 1
-            failed = 0
-        
+            
         print(f"\n{Fore.CYAN}📊 Final Summary:{Style.RESET_ALL}")
         print(f"Total accounts: {len(results)}")
         print(f"Successful: {Fore.GREEN}{successful}{Style.RESET_ALL}")
         print(f"Failed: {Fore.RED}{failed}{Style.RESET_ALL}")
+        if password_reset > 0:
+            print(f"Password Reset: {Fore.RED}{password_reset}{Style.RESET_ALL}")
         print(f"Total time: {total_time:.2f} seconds")
-        
-        # Print overall status based on the recounted values
-        if successful > 0:
-            print(f"\n{Fore.GREEN}✅ Pinterest Automation completed successfully!{Style.RESET_ALL}")
-        else:
-            print(f"\n{Fore.RED}❌ Pinterest Automation completed with errors.{Style.RESET_ALL}")
         
         return results
     
@@ -705,11 +744,31 @@ class AccountProcessorMixin(PinInteractionMixin):
             session_file (str): Path to save the session file
         """
         try:
+            # Get access token from cookies or headers
+            access_token = None
+            for cookie in api.session.cookies:
+                if cookie.name == 'csrftoken':
+                    access_token = cookie.value
+                    break
+            if not access_token:
+                access_token = api.session.headers.get('x-csrftoken')
+            
+            # Get Authorization bearer token
+            auth_header = api.session.headers.get('Authorization', '')
+            if auth_header.startswith('Bearer '):
+                bearer_token = auth_header[7:]  # Remove 'Bearer ' prefix
+                if not access_token:
+                    access_token = bearer_token
+            
             # Get session data
             session_data = {
                 'headers': dict(api.session.headers),
                 'cookies': {},
-                'timestamp': int(time.time())
+                'timestamp': int(time.time()),
+                'user_data': api.get_user_data() if hasattr(api, 'get_user_data') else None,
+                'access_token': access_token,
+                'email': api.email if hasattr(api, 'email') else None,
+                'device_info': api.account.get('device_info') if hasattr(api, 'account') else None
             }
             
             # Handle duplicate cookie names by using a dictionary
@@ -752,9 +811,14 @@ class AccountProcessorMixin(PinInteractionMixin):
                 return None
                 
             # Validate required session data
-            if not all(key in session_data for key in ['headers', 'cookies', 'timestamp']):
+            required_keys = ['headers', 'cookies', 'timestamp', 'access_token']
+            if not all(key in session_data for key in required_keys):
                 print(f"{Fore.YELLOW}⚠️ Invalid session data format{Style.RESET_ALL}")
                 return None
+                
+            # Ensure Authorization header is set correctly
+            if session_data['access_token']:
+                session_data['headers']['Authorization'] = f"Bearer {session_data['access_token']}"
                 
             return session_data
             
@@ -984,18 +1048,23 @@ class AccountProcessorMixin(PinInteractionMixin):
             print(f"{Fore.RED}❌ Missing credentials for re-login{Style.RESET_ALL}")
             return False
         
+        # Clear existing session data
+        api.session.cookies.clear()
+        api.session.headers.clear()
+        
+        # Set credentials on API instance
+        api.email = result['account_email']
+        api.password = api.password
+        
         # Attempt to re-login
         login_result = self.login_account(api, result['account_email'], api.password)
         if login_result['success']:
             print(f"{Fore.GREEN}✅ Re-login successful{Style.RESET_ALL}")
-            # Update result with new user data
-            result['user_data'] = login_result['user_data']
-            result['access_token'] = login_result['access_token']
             # Reset auth retries on success
             self._auth_retries = 0
             return True
         else:
-            print(f"{Fore.RED}❌ Re-login failed: {login_result.get('error', 'Unknown error')}{Style.RESET_ALL}")
+            print(f"{Fore.RED}❌ Re-login failed: {login_result.get('message', 'Unknown error')}{Style.RESET_ALL}")
             return False
 
     def get_pins_with_links(self, api: Any, result: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1177,6 +1246,15 @@ class AccountProcessorMixin(PinInteractionMixin):
         if creator_username:
             payload["options"]["extra_context"]["creator_username"] = creator_username
         
+        # Get the access token from the API session
+        access_token = None
+        for cookie in api.session.cookies:
+            if cookie.name == 'csrftoken':
+                access_token = cookie.value
+                break
+        if not access_token:
+            access_token = api.session.headers.get('x-csrftoken')
+            
         # Prepare headers
         headers = {
             "Host": "api.pinterest.com",
@@ -1190,7 +1268,7 @@ class AccountProcessorMixin(PinInteractionMixin):
             "X-Pinterest-Installid": api.session.headers.get('X-Pinterest-Installid', ''),
             "X-Pinterest-Appstate": app_state,
             "X-Node-Id": "true",
-            "Authorization": api.session.headers.get('Authorization', ''),
+            "Authorization": f"Bearer {access_token}" if access_token else "",
             "Accept-Encoding": "gzip, deflate, br",
             "Priority": "u=1, i",
             "Content-Type": "application/json"

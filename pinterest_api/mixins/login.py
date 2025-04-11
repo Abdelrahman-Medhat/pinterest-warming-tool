@@ -1,6 +1,6 @@
 from typing import Dict, Any
 import requests
-from ..exceptions import LoginFailedError, InvalidResponseError, IncorrectPasswordError
+from ..exceptions import LoginFailedError, InvalidResponseError, IncorrectPasswordError, PasswordResetedError
 
 class LoginMixin:
     # Additional headers specific to login
@@ -26,6 +26,7 @@ class LoginMixin:
             IncorrectPasswordError: If the password is incorrect
             LoginFailedError: If login fails for other reasons
             InvalidResponseError: If response format is invalid
+            PasswordResetedError: If Pinterest has reset the account's password
             requests.exceptions.RequestException: For network/API errors
         """
         endpoint = "/login/"
@@ -70,7 +71,7 @@ class LoginMixin:
             "baHJJGxpL9iynqy41KfjGma9MMwpDPYl81cSzwF0Ew46WhLjLi97jOQUtENz2w6FiWpggzljTom5Yl4nyptzsKX"
             "8rzd7OhKB3KhWxWIqW2StYdunjASdiMXBpfrUcxKam5liQ9fncWl9_BWc6UInVVMMKjzs3IO2b3ypWSA5txzoY8"
             "_88PfV7l8UF8HQA8jRMN-Ht8SYHTpi1wmKGnU8OO0hAAR_8lBKbu2hQQ18BHjgVSW4V57rWD-9mFCbqz4fzOMiJ"
-            "MWWcO1zRd_vlvY0f69-jJ8LsMYplYXJihWKEGANNIJjriyQbGwppgke0PwKABy0NnHhsx9sP1uHo8j4nVT4OL0L"
+            "MWWcO1zRd_vlvY0f69-jJ8LsMYplYXJihWKEGANNIJjriQbGwppgke0PwKABy0NnHhsx9sP1uHo8j4nVT4OL0L"
             "dItUf8aCs0GjpIzxzW2ssE9fzljAoIB3OgkgPJkiAP5Wbw7pNY4bGX5l9sFwgEgdV-4Sk_lDoud89zW-3veXV4u"
             "tPBTuVvYVd0c28UrFFue-Rim3FVzWiKCKl8NkGN3nAdBFOSDyU6d71NOri6bTqFzZj6KZiNygDPh0HP-BRBJ6Q2"
             "MHDDDk_EEs69tZZk_4951nIzF4BMq_cqYkWr5mV0n0fM0q4KlfPgpNbHlKn4YGca3p5SLVfW2Oc5HFjMqKbRnRM"
@@ -118,9 +119,12 @@ class LoginMixin:
                 raise InvalidResponseError(data)
 
             if data['status'] != 'success':
-                # Check for incorrect password error
-                if data.get('code') == 78 or data.get('code') == 85:
+                # Check for specific error codes
+                error_code = data.get('code')
+                if error_code == 78 or error_code == 85:
                     raise IncorrectPasswordError()
+                elif error_code == 88:
+                    raise PasswordResetedError("Pinterest has reset your password for security reasons. Please reset your password at https://www.pinterest.com/password/reset/")
                 error_msg = data.get('message', 'Unknown error')
                 raise LoginFailedError(error_msg)
             

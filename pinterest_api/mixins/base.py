@@ -1,11 +1,14 @@
 import time
 import requests
+import json
 from typing import Dict, Optional, Any, Union
 from ..exceptions import (
     AuthenticationError,
     InvalidResponseError,
-    LoginFailedError
+    LoginFailedError,
+    PasswordResetedError
 )
+from colorama import Fore, Style
 
 class BaseMixin:
     BASE_URL = "https://api.pinterest.com/v3"
@@ -66,32 +69,65 @@ class BaseMixin:
         Raises:
             AuthenticationError: If authentication is required but not available
         """
-        url = f"{self.BASE_URL}{endpoint}"
-        request_headers = self.session.headers.copy()
-        
-        # Handle authentication
-        if require_auth:
-            if not hasattr(self, '_access_token') or not self._access_token:
-                raise AuthenticationError("Authentication required. Please login first.")
-            request_headers['Authorization'] = f'Bearer {self._access_token}'
-        
-        # Update headers if additional ones provided
-        if headers:
-            request_headers.update(headers)
-            
         try:
+            # Make the request
             response = self.session.request(
                 method=method,
-                url=url,
+                url=f"{self.BASE_URL}{endpoint}",
                 data=data,
                 params=params,
-                headers=request_headers
+                headers=headers
             )
-            response.raise_for_status()
-            return response.json()
+            
+            # Log response for debugging
+            if hasattr(self, 'logger'):
+                self.logger.log_response(response)
+            
+            # Try to parse response as JSON
+            try:
+                response_data = response.json()
+            except json.JSONDecodeError:
+                response_data = response.text
+            
+            # Check for error codes in response
+            if isinstance(response_data, dict):
+                if response_data.get('status') == 'failure':
+                    error_code = response_data.get('code')
+                    error_msg = response_data.get('message', 'Unknown error')
+                    
+                    # Handle specific error codes
+                    if error_code == 88:
+                        raise PasswordResetedError(error_msg)
+                    elif error_code in (401, 403):
+                        raise AuthenticationError(error_msg)
+                    else:
+                        raise LoginFailedError(error_msg)
+            
+            # Handle HTTP error status codes
+            if response.status_code >= 400:
+                if response.status_code in (401, 403):
+                    raise AuthenticationError(f"Authentication failed: {response.status_code}")
+                else:
+                    response.raise_for_status()
+            
+            return response_data
+            
         except requests.exceptions.RequestException as e:
             # Handle token expiration or other auth errors
-            if response.status_code in (401, 403):
+            if hasattr(e, 'response') and e.response and e.response.status_code in (401, 403):
+                print(f"{Fore.RED}❌ Authentication error: {str(e)}{Style.RESET_ALL}")
+                print(f"{Fore.RED}❌ Response status: {e.response.status_code}{Style.RESET_ALL}")
+                print(f"{Fore.RED}❌ Response headers: {json.dumps(dict(e.response.headers), indent=2)}{Style.RESET_ALL}")
+                try:
+                    error_data = e.response.json()
+                    print(f"{Fore.RED}❌ Error data: {json.dumps(error_data, indent=2)}{Style.RESET_ALL}")
+                    
+                    # Check for password reset error code
+                    if isinstance(error_data, dict) and error_data.get('code') == 88:
+                        raise PasswordResetedError(error_data.get('message', 'Password reset required'))
+                except:
+                    print(f"{Fore.RED}❌ Error text: {e.response.text[:1000]}{Style.RESET_ALL}")
+                
                 self._access_token = None
                 raise AuthenticationError("Session expired or invalid. Please login again.")
             raise e
