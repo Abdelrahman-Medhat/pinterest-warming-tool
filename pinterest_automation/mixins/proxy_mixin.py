@@ -61,13 +61,20 @@ class ProxyMixin:
                 
                 if rotation_response.status_code != 200:
                     print(f"{Fore.YELLOW}⚠️ Rotation failed: {rotation_response.text}{Style.RESET_ALL}")
-                    # Check for specific error message about waiting 120 seconds
+                    # Check for specific error messages
                     try:
                         error_data = rotation_response.json()
-                        if "message" in error_data and "wait for atleast 120 seconds" in error_data["message"].lower():
-                            print(f"{Fore.YELLOW}⏳ Waiting 120 seconds before retrying rotation...{Style.RESET_ALL}")
-                            time.sleep(120)
-                            continue
+                        if "message" in error_data:
+                            # Check for "wait for atleast 120 seconds" message
+                            if "wait for atleast 120 seconds" in error_data["message"].lower():
+                                print(f"{Fore.YELLOW}⏳ Waiting 120 seconds before retrying rotation...{Style.RESET_ALL}")
+                                time.sleep(120)
+                                continue
+                            # Check for "being processed" message
+                            elif "rotation is currently being processed" in error_data["message"].lower() or "automatically rotating the ip" in error_data["message"].lower():
+                                print(f"{Fore.YELLOW}⏳ IP rotation is in progress. Waiting 120 seconds before retrying...{Style.RESET_ALL}")
+                                time.sleep(120)
+                                continue
                     except (ValueError, KeyError):
                         pass
                     

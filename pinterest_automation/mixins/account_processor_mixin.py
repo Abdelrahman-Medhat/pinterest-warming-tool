@@ -50,44 +50,6 @@ class AccountProcessorMixin(PinInteractionMixin):
         try:
             print(f"{Fore.CYAN}🔑 Logging in to account: {email}{Style.RESET_ALL}")
             
-            # Check if session exists
-            session_file = f"sessions/{email.replace('@', '_at_').replace('.', '_')}.json"
-            if os.path.exists(session_file):
-                print(f"{Fore.YELLOW}📂 Found existing session for {email}{Style.RESET_ALL}")
-                try:
-                    # Try to load and validate session
-                    session_data = self.load_session_from_file(session_file)
-                    if session_data:
-                        # Apply session data to API instance
-                        api.session.headers.update(session_data.get('headers', {}))
-                        for cookie_name, cookie_value in session_data.get('cookies', {}).items():
-                            api.session.cookies.set(cookie_name, cookie_value)
-                        
-                        # Verify session is still valid
-                        try:
-                            user_data = api.get_user_data()
-                            if user_data:
-                                result['user_data'] = user_data
-                                # Get access token from cookies or headers
-                                access_token = None
-                                for cookie in api.session.cookies:
-                                    if cookie.name == 'csrftoken':
-                                        access_token = cookie.value
-                                        break
-                                if not access_token:
-                                    access_token = api.session.headers.get('x-csrftoken')
-                                result['access_token'] = access_token
-                                result['success'] = True
-                                print(f"{Fore.GREEN}✅ Successfully loaded session for {email}{Style.RESET_ALL}")
-                                return result
-                        except:
-                            print(f"{Fore.YELLOW}⚠️ Session invalid, will login with credentials{Style.RESET_ALL}")
-                except Exception as e:
-                    print(f"{Fore.YELLOW}⚠️ Error loading session: {str(e)}{Style.RESET_ALL}")
-            
-            # Login with credentials
-            print(f"{Fore.CYAN}🔑 Logging in with credentials for {email}{Style.RESET_ALL}")
-            
             # Set credentials
             api.email = email
             api.password = password
@@ -97,78 +59,76 @@ class AccountProcessorMixin(PinInteractionMixin):
                 print(f"{Fore.CYAN}📱 Setting device info for {email}{Style.RESET_ALL}")
                 api.set_device_info(api.account['device_info'])
             
-            # Check email exists
-            print(f"{Fore.CYAN}📧 Checking if email exists...{Style.RESET_ALL}")
-            api.check_email_exists()
+            # Use the session file path - store at project root
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
+            session_dir = os.path.join(project_root, "sessions")
+            os.makedirs(session_dir, exist_ok=True)
+            session_file = os.path.join(session_dir, f"{email.replace('@', '_at_').replace('.', '_')}.json")
             
-            # Perform login
-            print(f"{Fore.CYAN}🔐 Performing login...{Style.RESET_ALL}")
-            login_response = api.login()
-            
-            # Handle both boolean and dictionary responses
-            if isinstance(login_response, bool) and login_response:
-                # If login() returned True, try to get user data
+            # First check if we have a valid session file
+            if os.path.exists(session_file):
+                print(f"{Fore.YELLOW}📂 Found existing session file for {email}{Style.RESET_ALL}")
                 try:
-                    user_data = api.get_user_data()
-                    if user_data:
-                        result['user_data'] = user_data
-                        # Get access token from cookies or headers
-                        access_token = None
-                        for cookie in api.session.cookies:
-                            if cookie.name == 'csrftoken':
-                                access_token = cookie.value
-                                break
-                        if not access_token:
-                            access_token = api.session.headers.get('x-csrftoken')
-                        result['access_token'] = access_token
+                    # Load session directly
+                    with open(session_file, 'r') as f:
+                        session_data = json.load(f)
+                    
+                    # Set user data and access token directly on the API instance
+                    if 'user_data' in session_data and 'access_token' in session_data:
+                        print(f"{Fore.CYAN}🔄 Loading session data from file...{Style.RESET_ALL}")
+                        
+                        # Ensure API instance has these attributes
+                        if not hasattr(api, '_user_data'):
+                            api._user_data = None
+                        if not hasattr(api, '_access_token'):
+                            api._access_token = None
+                            
+                        # Set the data directly on the API instance
+                        api._user_data = session_data['user_data']
+                        api._access_token = session_data['access_token']
+                        
+                        # Set up auth header
+                        api.session.headers['Authorization'] = f"Bearer {session_data['access_token']}"
+                        
+                        # Update result
+                        result['user_data'] = session_data['user_data']
+                        result['access_token'] = session_data['access_token']
                         result['success'] = True
                         
-                        # Save new session
-                        self.save_session_to_file(api, session_file)
-                
-                        print(f"{Fore.GREEN}✅ Successfully logged in to account: {email}{Style.RESET_ALL}")
-                    else:
-                        result['error'] = "Failed to get user data after login"
-                        print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
+                        print(f"{Fore.GREEN}✅ Successfully loaded session from file for: {email}{Style.RESET_ALL}")
+                        return result
                 except Exception as e:
-                    result['error'] = f"Error getting user data: {str(e)}"
-                    print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-            elif isinstance(login_response, dict) and login_response.get('success'):
-                # Handle dictionary response
-                user_data = api.get_user_data()
-                result['user_data'] = user_data
-                # Get access token from cookies or headers
-                access_token = None
-                for cookie in api.session.cookies:
-                    if cookie.name == 'csrftoken':
-                        access_token = cookie.value
-                        break
-                if not access_token:
-                    access_token = api.session.headers.get('x-csrftoken')
-                result['access_token'] = access_token
+                    print(f"{Fore.YELLOW}⚠️ Error loading session file: {str(e)}, will create new session{Style.RESET_ALL}")
+            
+            # Use get_or_create_session which handles session loading, validation, and creation
+            try:
+                print(f"{Fore.CYAN}🔐 Getting or creating session...{Style.RESET_ALL}")
+                # This will either load a valid session or create a new one by logging in
+                session_data = api.get_or_create_session(session_file)
+                
+                # Update result with session data
+                result['user_data'] = session_data.get('user_data')
+                result['access_token'] = session_data.get('access_token')
                 result['success'] = True
                 
-                # Save new session
-                self.save_session_to_file(api, session_file)
-                
                 print(f"{Fore.GREEN}✅ Successfully logged in to account: {email}{Style.RESET_ALL}")
-            else:
-                # Handle failure case
-                error_msg = "Unknown login error"
-                if isinstance(login_response, dict):
-                    error_msg = login_response.get('error', error_msg)
-                result['error'] = error_msg
-                print(f"{Fore.RED}❌ Failed to login to account: {email} - {result['error']}{Style.RESET_ALL}")
+                
+            except EmailNotFoundError as e:
+                result['error'] = f"Email not found: {str(e)}"
+                print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
+            except IncorrectPasswordError:
+                result['error'] = "Incorrect password"
+                print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
+            except LoginFailedError as e:
+                result['error'] = f"Login failed: {str(e)}"
+                print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
+            except AuthenticationError as e:
+                result['error'] = f"Authentication error: {str(e)}"
+                print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
+            except Exception as e:
+                result['error'] = f"Error during session creation: {str(e)}"
+                print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
             
-        except EmailNotFoundError as e:
-            result['error'] = f"Email not found: {str(e)}"
-            print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-        except IncorrectPasswordError:
-            result['error'] = "Incorrect password"
-            print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
-        except LoginFailedError as e:
-            result['error'] = f"Login failed: {str(e)}"
-            print(f"{Fore.RED}❌ {result['error']}{Style.RESET_ALL}")
         except Exception as e:
             result['error'] = str(e)
             print(f"{Fore.RED}❌ Error logging in to account: {email} - {str(e)}{Style.RESET_ALL}")

@@ -171,20 +171,48 @@ python main.py
 
 #### Proxy Configuration
 
-To use proxies, add proxy information to your accounts in `accounts.json`:
+The system uses a centralized proxy configuration system via the `proxy_config.json` file:
+
+```json
+[
+  {
+    "ip": "45.79.156.193",
+    "port": "8527",
+    "username": "81QRQ8B9TNXA",
+    "password": "jQKBfOZC0v",
+    "rotate_url": "https://api.mountproxies.com/api/proxy/67f3afc999e9e63742ed5658/rotate_ip?api_key=a4f667e14ef53ce1f5bb0a39a42a2d3a",
+    "name": "Sample Proxy",
+    "country": "US",
+    "city": "New York"
+  }
+]
+```
+
+The proxy system offers these key features:
+
+1. **Automatic Proxy Assignment**: Proxies are automatically assigned to accounts in a round-robin fashion.
+2. **IP Rotation**: Built-in functionality to rotate proxy IPs via the `rotate_url` endpoint.
+3. **Rate Limiting Protection**: Automatic waiting periods between IP rotations (minimum 130 seconds).
+4. **Error Handling**: Smart handling of common proxy rotation errors with appropriate retries.
+5. **Session Persistence**: The system tracks rotation times and current IPs to maintain consistent usage.
+
+The proxy rotation system also provides:
+- Verification of successful IP changes
+- Multiple retry attempts for failed rotations
+- Detailed logging of IP rotation status
+
+For manual proxy configuration in accounts.json, use:
 
 ```json
 {
   "email": "your.email@example.com",
   "password": "your_password",
   "behaviors": { ... },
-  "device_info": { ... },
-  "proxy": {
-    "http": "http://username:password@proxy.example.com:8080",
-    "https": "http://username:password@proxy.example.com:8080"
-  }
+  "device_info": { ... }
 }
 ```
+
+The system will automatically handle the correct formatting for API requests.
 
 #### Customizing Behavior
 
