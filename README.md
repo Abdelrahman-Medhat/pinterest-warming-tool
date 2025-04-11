@@ -25,6 +25,7 @@ The tool is designed to be configurable, allowing you to customize behavior for 
 - **Rate limiting protection**: Built-in delays and retry mechanisms to avoid Pinterest's rate limits
 - **Headless browser option**: Run the browser in headless mode (no GUI) for server environments
 - **Configurable link visits**: Enable or disable visiting pin links while maintaining tracking
+- **Creator following**: Automatically follow pin creators with configurable probability
 
 ## Project Structure
 
@@ -89,6 +90,7 @@ The `behaviors` object defines the probability (0-100) of performing each action
 - `save_pin`: Probability of saving a pin (default: 100%)
 - `comment_pin`: Probability of commenting on a pin (default: 100%)
 - `visit_link`: Probability of visiting the pin's external link (default: 100%, always enforced)
+- `follow_creator`: Probability of following the pin's creator (default: 100%)
 
 #### Device Information
 
@@ -143,7 +145,8 @@ SPECIFIC_PINS = [
     #         "like": True,
     #         "save": True,
     #         "comment": True,
-    #         "visit": True
+    #         "visit": True,
+    #         "follow_creator": True  # Enable following the pin creator
     #     }
     # }
 ]
@@ -179,12 +182,13 @@ The `SPECIFIC_PINS` setting allows you to specify exact pins to process instead 
 To use this feature:
 1. Uncomment the example in the config file or add your own entries
 2. Provide a valid pin ID for each pin (from Pinterest URL or pin data)
-3. Specify which actions to perform by setting `like`, `save`, `comment`, and `visit` to `True` or `False`
+3. Specify which actions to perform by setting `like`, `save`, `comment`, `visit`, and `follow_creator` to `True` or `False`
 
 This feature is useful when you:
 - Need to interact with specific pins rather than random feed content
 - Want different interactions for different pins
 - Need to target specific content for promotion or engagement
+- Want to follow specific creators associated with pins
 
 Example with multiple pins and different actions:
 ```python
@@ -195,7 +199,8 @@ SPECIFIC_PINS = [
             "like": True,
             "save": True,
             "comment": True,
-            "visit": True
+            "visit": True,
+            "follow_creator": True  # Follow the creator of this pin
         }
     },
     {
@@ -204,7 +209,8 @@ SPECIFIC_PINS = [
             "like": True,
             "save": False,
             "comment": False,
-            "visit": True
+            "visit": True,
+            "follow_creator": False  # Don't follow the creator of this pin
         }
     }
 ]
@@ -272,7 +278,7 @@ The system will automatically handle the correct formatting for API requests.
 
 #### Customizing Behavior
 
-You can customize the behavior of each account by adjusting the probability values in the `behaviors` object. For example, to make an account only like pins 50% of the time and never comment:
+You can customize the behavior of each account by adjusting the probability values in the `behaviors` object. For example, to make an account only like pins 50% of the time, never comment, and follow creators 30% of the time:
 
 ```json
 "behaviors": {
@@ -280,7 +286,8 @@ You can customize the behavior of each account by adjusting the probability valu
   "like_pin": 50,
   "save_pin": 0,
   "comment_pin": 0,
-  "visit_link": 100
+  "visit_link": 100,
+  "follow_creator": 30
 }
 ```
 

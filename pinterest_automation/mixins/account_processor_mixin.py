@@ -865,11 +865,13 @@ class AccountProcessorMixin(PinInteractionMixin):
             'save_success': False,
             'comment_success': False,
             'link_visit_success': False,
+            'follow_creator_success': False,
             'open_attempted': False,
             'like_attempted': False,
             'save_attempted': False,
             'comment_attempted': False,
             'link_visit_attempted': False,
+            'follow_creator_attempted': False,
             'errors': []
         }
         
@@ -893,7 +895,8 @@ class AccountProcessorMixin(PinInteractionMixin):
                 'like_pin': 100,
                 'save_pin': 100,
                 'comment_pin': 100,
-                'visit_link': 100  # Always 100% as per requirement
+                'visit_link': 100,  # Always 100% as per requirement
+                'follow_creator': 100  # Default to 100% for following creators
             }
             
             # Merge default behaviors with account-specific behaviors
@@ -1045,12 +1048,43 @@ class AccountProcessorMixin(PinInteractionMixin):
             else:
                 print(f"{Fore.YELLOW}⏭️ Skipping link visit for pin {pin_id} (not specified in config){Style.RESET_ALL}")
             
+            # Follow creator if config specifies it and the pin has a creator
+            if should_perform_action('follow_creator'):
+                pin_result['follow_creator_attempted'] = True
+                # Get creator ID from the correct path in the pin data structure
+                creator_id = pin.get('native_creator', {}).get('id')
+                
+                if not creator_id:
+                    print(f"{Fore.YELLOW}⚠️ Pin {pin_id} does not have a creator to follow{Style.RESET_ALL}")
+                else:
+                    try:
+                        add_delay()
+                        follow_result = self.follow_creator(api, creator_id, full_name)
+                        pin_result['follow_creator_success'] = follow_result.get('success', False)
+                        
+                        if pin_result['follow_creator_success']:
+                            print(f"{Fore.GREEN}✅ Followed creator {creator_id} for pin {pin_id}{Style.RESET_ALL}")
+                        else:
+                            error_msg = follow_result.get('error', 'Unknown error')
+                            print(f"{Fore.RED}❌ Error following creator for pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                            pin_result['errors'].append(f"Error following creator for pin {pin_id}: {error_msg}")
+                    except Exception as e:
+                        error_msg = f"Error following creator for pin {pin_id}: {str(e)}"
+                        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(error_msg)
+                        if "429" in str(e):
+                            print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                            time.sleep(random.uniform(10, 15))
+            else:
+                print(f"{Fore.YELLOW}⏭️ Skipping follow creator action for account {account_email} (probability: {behaviors.get('follow_creator', 100)}%){Style.RESET_ALL}")
+            
             # Add a final summary of actions performed
             actions_summary = []
             if pin_result['like_success']: actions_summary.append("Liked")
             if pin_result['save_success']: actions_summary.append("Saved")
             if pin_result['comment_success']: actions_summary.append("Commented")
             if pin_result['link_visit_success']: actions_summary.append("Visited link")
+            if pin_result['follow_creator_success']: actions_summary.append("Followed creator")
             
             if actions_summary:
                 print(f"{Fore.GREEN}✨ Actions performed on pin {pin_id}: {', '.join(actions_summary)}{Style.RESET_ALL}")
@@ -1085,11 +1119,13 @@ class AccountProcessorMixin(PinInteractionMixin):
             'save_success': False,
             'comment_success': False,
             'link_visit_success': False,
+            'follow_creator_success': False,
             'open_attempted': False,
             'like_attempted': False,
             'save_attempted': False,
             'comment_attempted': False,
             'link_visit_attempted': False,
+            'follow_creator_attempted': False,
             'errors': []
         }
         
@@ -1227,12 +1263,43 @@ class AccountProcessorMixin(PinInteractionMixin):
             else:
                 print(f"{Fore.YELLOW}⏭️ Skipping link visit for pin {pin_id} (not specified in config){Style.RESET_ALL}")
             
+            # Follow creator if config specifies it and the pin has a creator
+            if config_actions.get('follow_creator', False):
+                pin_result['follow_creator_attempted'] = True
+                # Get creator ID from the correct path in the pin data structure
+                creator_id = pin.get('native_creator', {}).get('id')
+                
+                if not creator_id:
+                    print(f"{Fore.YELLOW}⚠️ Pin {pin_id} does not have a creator to follow{Style.RESET_ALL}")
+                else:
+                    try:
+                        add_delay()
+                        follow_result = self.follow_creator(api, creator_id, full_name)
+                        pin_result['follow_creator_success'] = follow_result.get('success', False)
+                        
+                        if pin_result['follow_creator_success']:
+                            print(f"{Fore.GREEN}✅ Followed creator {creator_id} for pin {pin_id}{Style.RESET_ALL}")
+                        else:
+                            error_msg = follow_result.get('error', 'Unknown error')
+                            print(f"{Fore.RED}❌ Error following creator for pin {pin_id}: {error_msg}{Style.RESET_ALL}")
+                            pin_result['errors'].append(f"Error following creator for pin {pin_id}: {error_msg}")
+                    except Exception as e:
+                        error_msg = f"Error following creator for pin {pin_id}: {str(e)}"
+                        print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                        pin_result['errors'].append(error_msg)
+                        if "429" in str(e):
+                            print(f"{Fore.YELLOW}⚠️ Rate limited, waiting longer...{Style.RESET_ALL}")
+                            time.sleep(random.uniform(10, 15))
+            else:
+                print(f"{Fore.YELLOW}⏭️ Skipping follow creator action for pin {pin_id} (not specified in config){Style.RESET_ALL}")
+            
             # Add a final summary of actions performed
             actions_summary = []
             if pin_result['like_success']: actions_summary.append("Liked")
             if pin_result['save_success']: actions_summary.append("Saved")
             if pin_result['comment_success']: actions_summary.append("Commented")
             if pin_result['link_visit_success']: actions_summary.append("Visited link")
+            if pin_result['follow_creator_success']: actions_summary.append("Followed creator")
             
             if actions_summary:
                 print(f"{Fore.GREEN}✨ Actions performed on pin {pin_id}: {', '.join(actions_summary)}{Style.RESET_ALL}")
@@ -1554,3 +1621,32 @@ class AccountProcessorMixin(PinInteractionMixin):
         else:
             print(f"{Fore.RED}❌ Re-login failed: {login_result.get('error', 'Unknown error')}{Style.RESET_ALL}")
             return False 
+
+    def follow_creator(self, api: Any, creator_id: str, full_name: str) -> Dict[str, Any]:
+        """
+        Follow a Pinterest creator.
+        
+        Args:
+            api (Any): Pinterest API instance
+            creator_id (str): Creator ID to follow
+            full_name (str): Full name of the user
+            
+        Returns:
+            Dict[str, Any]: Result of the follow action
+        """
+        try:
+            # Follow the creator
+            follow_result = api.follow_creator(creator_id)
+            
+            if follow_result:
+                print(f"{Fore.GREEN}✅ Followed creator {creator_id}{Style.RESET_ALL}")
+                return {'success': True}
+            else:
+                error_msg = "Failed to follow creator"
+                print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+                return {'success': False, 'error': error_msg}
+                
+        except Exception as e:
+            error_msg = f"Error following creator {creator_id}: {str(e)}"
+            print(f"{Fore.RED}❌ {error_msg}{Style.RESET_ALL}")
+            return {'success': False, 'error': error_msg} 

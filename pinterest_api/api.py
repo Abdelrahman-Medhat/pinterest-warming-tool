@@ -14,7 +14,8 @@ from .mixins import (
     FeedsMixin,
     PinsMixin,
     CommentMixin,
-    TrackingMixin
+    TrackingMixin,
+    CreatorsMixin
 )
 
 class PinterestAPI(
@@ -26,6 +27,7 @@ class PinterestAPI(
     PinsMixin,
     CommentMixin,
     TrackingMixin,  # Tracking functionality
+    CreatorsMixin,  # Creator functionality
     BaseMixin  # Base mixin last since others depend on it
 ):
     """
