@@ -241,9 +241,9 @@ The system uses a centralized proxy configuration system via the `proxy_config.j
   {
     "ip": "45.79.156.193",
     "port": "8527",
-    "username": "81QRQ8B9TNXA",
-    "password": "jQKBfOZC0v",
-    "rotate_url": "https://api.mountproxies.com/api/proxy/67f3afc999e9e63742ed5658/rotate_ip?api_key=a4f667e14ef53ce1f5bb0a39a42a2d3a",
+    "username": "<username>",
+    "password": "<password>",
+    "rotate_url": "<rotate URL from mountproxies.com>",
     "name": "Sample Proxy",
     "country": "US",
     "city": "New York"
